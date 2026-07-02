@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import LoginPage from "../pages/auth/LoginPage";
 import DashboardLayout from "../components/layouts/Dashboardlayout";
 import DashboardPage from "../pages/dashboard/DashboardPage";
+import ArticlesPage from "../pages/articles/ArticlesPage";
 
 const isAuthenticated = () => !!localStorage.getItem("sphere_token");
 
@@ -43,7 +44,7 @@ export default function AppRoutes() {
         <Route index element={<DashboardPage />} />
 
         {/* Content */}
-        <Route path="articles" element={<ComingSoon title="Articles" />} />
+        <Route path="articles" element={<ArticlesPage />} />
         <Route path="articles/new" element={<ComingSoon title="New Article" />} />
         <Route path="articles/:id" element={<ComingSoon title="Edit Article" />} />
         <Route path="categories" element={<ComingSoon title="Categories" />} />

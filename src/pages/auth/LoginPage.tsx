@@ -1,7 +1,141 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../lib/axios";
+
+function SphereLogo() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d")!;
+  
+
+    const W = 260, H = 260, cx = W / 2, cy = H / 2, R = 98;
+    let angle = 0;
+
+    const meridians = 8;
+    const parallels = 5;
+
+    const nodes = [
+      { lat: 0, lng: 0, r: 7 },
+      { lat: 0.4, lng: 1.2, r: 4 },
+      { lat: -0.3, lng: -1.0, r: 3 },
+      { lat: 0.7, lng: 2.5, r: 3.5 },
+      { lat: -0.6, lng: 1.8, r: 3 },
+      { lat: 0.2, lng: -2.2, r: 4 },
+      { lat: -0.8, lng: -0.5, r: 3 },
+      { lat: 0.9, lng: 0.7, r: 2.5 },
+    ];
+
+    function project(lat: number, lng: number, rot: number) {
+      const x3 = Math.cos(lat) * Math.sin(lng + rot);
+      const y3 = Math.sin(lat);
+      const z3 = Math.cos(lat) * Math.cos(lng + rot);
+      return { sx: cx + R * x3, sy: cy - R * y3, z: z3 };
+    }
+
+    function drawGlobe(rot: number) {
+      ctx.clearRect(0, 0, W, H);
+
+      // Base sphere
+      const grd = ctx.createRadialGradient(cx - 20, cy - 20, 10, cx, cy, R + 20);
+      grd.addColorStop(0, "rgba(13,30,46,0.7)");
+      grd.addColorStop(1, "rgba(10,20,32,0.85)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = grd;
+      ctx.fill();
+
+      // Rim glow
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(0,200,224,0.35)";
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.clip();
+
+      // Meridians
+      for (let m = 0; m < meridians; m++) {
+        const lng = (m / meridians) * Math.PI * 2;
+        const pts: { sx: number; sy: number; z: number }[] = [];
+        for (let s = 0; s <= 60; s++) {
+          const lat = -Math.PI / 2 + (s / 60) * Math.PI;
+          pts.push(project(lat, lng, rot));
+        }
+        ctx.beginPath();
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy)));
+        const avgZ = pts.reduce((a, b) => a + b.z, 0) / pts.length;
+        ctx.strokeStyle = `rgba(180,210,230,${avgZ > 0 ? 0.35 + 0.2 * avgZ : 0.04 + 0.08 * (1 + avgZ)})`;
+        ctx.lineWidth = 0.7;
+        ctx.stroke();
+      }
+
+      // Parallels
+      for (let p = 1; p <= parallels; p++) {
+        const lat = -Math.PI / 2 + (p / (parallels + 1)) * Math.PI;
+        const pts: { sx: number; sy: number; z: number }[] = [];
+        for (let s = 0; s <= 80; s++) {
+          pts.push(project(lat, (s / 80) * Math.PI * 2, rot));
+        }
+        ctx.beginPath();
+        pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.sx, pt.sy) : ctx.lineTo(pt.sx, pt.sy)));
+        const avgZ = pts.reduce((a, b) => a + b.z, 0) / pts.length;
+        ctx.strokeStyle = `rgba(180,210,230,${0.1 + 0.2 * ((avgZ + 1) / 2)})`;
+        ctx.lineWidth = 0.7;
+        ctx.stroke();
+      }
+
+      // Nodes
+      nodes
+        .map((n) => ({ ...n, ...project(n.lat, n.lng, rot) }))
+        .sort((a, b) => a.z - b.z)
+        .forEach((n) => {
+          if (n.z < -0.2) return;
+          const alpha = 0.3 + 0.7 * Math.max(0, n.z);
+          ctx.beginPath();
+          ctx.arc(n.sx, n.sy, n.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(0,200,224,${alpha})`;
+          ctx.fill();
+          if (n.r > 4) {
+            ctx.beginPath();
+            ctx.arc(n.sx, n.sy, n.r + 3, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(0,200,224,${alpha * 0.35})`;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        });
+
+      ctx.restore();
+
+      // Specular shine
+      const shine = ctx.createRadialGradient(cx - 30, cy - 34, 2, cx - 20, cy - 24, 55);
+      shine.addColorStop(0, "rgba(255,255,255,0.10)");
+      shine.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = shine;
+      ctx.fill();
+    }
+
+    function loop() {
+      angle += 0.008;
+      drawGlobe(angle);
+      animRef.current = requestAnimationFrame(loop);
+    }
+    loop();
+
+    return () => cancelAnimationFrame(animRef.current);
+  }, []);
+
+  return <canvas ref={canvasRef} width={260} height={260} />;
+}
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -57,6 +191,19 @@ export default function LoginPage() {
           width: 400px; height: 400px; border-radius: 50%; pointer-events: none;
           background: radial-gradient(circle, rgba(0,200,224,0.08) 0%, transparent 70%);
         }
+        .globe-bg {
+          position: absolute;
+          top: 50%; left: 50%;
+          transform: translate(-50%, -50%);
+          pointer-events: none;
+          opacity: 0.22;
+          width: 340px; height: 340px;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .globe-bg canvas {
+          width: 340px !important;
+          height: 340px !important;
+        }
         .form-wrap { width: 100%; max-width: 360px; }
         .input-field {
           width: 100%; padding: 11px 14px; background: #fff;
@@ -88,21 +235,100 @@ export default function LoginPage() {
           <div className="grid-overlay" />
           <div className="glow" />
 
-          {/* Logo */}
-          <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#0d1e2e", border: "1.5px solid #00C8E0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: "#00C8E0" }} />
-            </div>
-            <div>
-              <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 17, fontWeight: 700, color: "#fff", letterSpacing: "0.06em" }}>
-                SPHERE <span style={{ color: "#00C8E0" }}>TECH</span>
-              </div>
-              <div style={{ fontSize: 9, color: "rgba(200,207,216,0.45)", letterSpacing: "0.16em", textTransform: "uppercase" }}>
-                CMS Admin
-              </div>
-            </div>
+          {/* Spinning globe in the background */}
+          <div className="globe-bg">
+            <SphereLogo />
           </div>
 
+          {/* Logo */}
+<div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 12 }}>
+  {/* Mini spinning globe replacing the circle-dot */}
+  <div style={{ width: 36, height: 36, flexShrink: 0 }}>
+    <canvas
+      ref={(canvas) => {
+        if (!canvas || (canvas as any)._globeInit) return;
+        (canvas as any)._globeInit = true;
+        const ctx = canvas.getContext("2d")!;
+        const W = 36, H = 36, cx = 18, cy = 18, R = 15;
+        let rot = 0;
+        const meridians = 8, parallels = 5;
+        const nodes = [
+          { lat: 0, lng: 0, r: 2.5 },
+          { lat: 0.4, lng: 1.2, r: 1.5 },
+          { lat: -0.3, lng: -1.0, r: 1.2 },
+          { lat: 0.7, lng: 2.5, r: 1.3 },
+          { lat: 0.2, lng: -2.2, r: 1.5 },
+        ];
+        function project(lat: number, lng: number, r: number) {
+          const x3 = Math.cos(lat) * Math.sin(lng + r);
+          const y3 = Math.sin(lat);
+          const z3 = Math.cos(lat) * Math.cos(lng + r);
+          return { sx: cx + R * x3, sy: cy - R * y3, z: z3 };
+        }
+        function draw() {
+          ctx.clearRect(0, 0, W, H);
+          // Base
+          const grd = ctx.createRadialGradient(cx - 4, cy - 4, 2, cx, cy, R + 4);
+          grd.addColorStop(0, "rgba(13,30,46,0.9)");
+          grd.addColorStop(1, "rgba(10,20,32,0.95)");
+          ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+          ctx.fillStyle = grd; ctx.fill();
+          // Rim glow
+          ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(0,200,224,0.6)"; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip();
+          // Meridians
+          for (let m = 0; m < meridians; m++) {
+            const lng = (m / meridians) * Math.PI * 2;
+            const pts = [];
+            for (let s = 0; s <= 40; s++) {
+              pts.push(project(-Math.PI / 2 + (s / 40) * Math.PI, lng, rot));
+            }
+            ctx.beginPath();
+            pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.sx, p.sy) : ctx.lineTo(p.sx, p.sy));
+            const avgZ = pts.reduce((a, b) => a + b.z, 0) / pts.length;
+            ctx.strokeStyle = `rgba(180,210,230,${avgZ > 0 ? 0.35 + 0.2 * avgZ : 0.05})`;
+            ctx.lineWidth = 0.5; ctx.stroke();
+          }
+          // Parallels
+          for (let p = 1; p <= parallels; p++) {
+            const lat = -Math.PI / 2 + (p / (parallels + 1)) * Math.PI;
+            const pts = [];
+            for (let s = 0; s <= 60; s++) pts.push(project(lat, (s / 60) * Math.PI * 2, rot));
+            ctx.beginPath();
+            pts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.sx, pt.sy) : ctx.lineTo(pt.sx, pt.sy));
+            ctx.strokeStyle = "rgba(180,210,230,0.15)"; ctx.lineWidth = 0.5; ctx.stroke();
+          }
+          // Nodes
+          nodes.map(n => ({ ...n, ...project(n.lat, n.lng, rot) }))
+            .sort((a, b) => a.z - b.z)
+            .forEach(n => {
+              if (n.z < -0.2) return;
+              const alpha = 0.3 + 0.7 * Math.max(0, n.z);
+              ctx.beginPath(); ctx.arc(n.sx, n.sy, n.r, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(0,200,224,${alpha})`; ctx.fill();
+            });
+          ctx.restore();
+          rot += 0.008;
+          requestAnimationFrame(draw);
+        }
+        draw();
+      }}
+      width={36}
+      height={36}
+      style={{ display: "block" }}
+    />
+  </div>
+
+  <div>
+    <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 17, fontWeight: 700, color: "#fff", letterSpacing: "0.06em" }}>
+      SPHERE <span style={{ color: "#00C8E0" }}>TECH</span>
+    </div>
+    <div style={{ fontSize: 9, color: "rgba(200,207,216,0.45)", letterSpacing: "0.16em", textTransform: "uppercase" }}>
+      CMS Admin
+    </div>
+  </div>
+</div>
           {/* Headline */}
           <div style={{ position: "relative", zIndex: 1 }}>
             <div style={{ display: "inline-block", padding: "3px 10px", borderRadius: 2, marginBottom: 20, fontSize: 10, fontWeight: 700, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.12em", textTransform: "uppercase", background: "rgba(0,200,224,0.12)", color: "#00C8E0" }}>
@@ -205,7 +431,7 @@ export default function LoginPage() {
               <span style={{ fontSize: 13, color: "#4a5568" }}>Keep me signed in</span>
             </label>
 
-            {/* Submit — type button, onClick */}
+            {/* Submit */}
             <button
               type="button"
               onClick={handleSubmit}
