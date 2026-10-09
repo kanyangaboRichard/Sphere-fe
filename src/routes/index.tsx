@@ -3,6 +3,10 @@ import LoginPage from "../pages/auth/LoginPage";
 import DashboardLayout from "../components/layouts/Dashboardlayout";
 import DashboardPage from "../pages/dashboard/DashboardPage";
 import ArticlesPage from "../pages/articles/ArticlesPage";
+import NewArticlesPage from "../pages/articles/NewArticlesPage";
+import GalleryPage from "../pages/gallery/GalleryPage"; 
+
+
 
 const isAuthenticated = () => !!localStorage.getItem("sphere_token");
 
@@ -45,9 +49,9 @@ export default function AppRoutes() {
 
         {/* Content */}
         <Route path="articles" element={<ArticlesPage />} />
-        <Route path="articles/new" element={<ComingSoon title="New Article" />} />
+        <Route path="articles/new" element={<NewArticlesPage />} />
         <Route path="articles/:id" element={<ComingSoon title="Edit Article" />} />
-        <Route path="categories" element={<ComingSoon title="Categories" />} />
+        <Route path="gallery" element={<GalleryPage />} />
         <Route path="authors" element={<ComingSoon title="Authors" />} />
         <Route path="media" element={<ComingSoon title="Media Library" />} />
         <Route path="videos" element={<ComingSoon title="Videos" />} />
