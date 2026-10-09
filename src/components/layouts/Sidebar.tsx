@@ -1,30 +1,34 @@
 import { useNavigate, useLocation } from "react-router-dom";
+import { LayoutDashboard, FileText, Image, Users, ClipboardList, Settings as SettingsIcon, LogOut,  } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const nav = [
+type NavItem = {
+  icon: LucideIcon;
+  label: string;
+  path: string;
+  badge?: string;
+};
+
+type NavSection = {
+  label: string | null;
+  items: NavItem[];
+};
+
+const nav: NavSection[] = [
   {
-    label: "Content",
+    label: null,
     items: [
-      { icon: "📄", label: "Articles", path: "/dashboard/articles", badge: "24" },
-      { icon: "🏷️", label: "Categories", path: "/dashboard/categories" },
-      { icon: "✍️", label: "Authors", path: "/dashboard/authors" },
-      { icon: "🖼️", label: "Media", path: "/dashboard/media" },
-      { icon: "🎬", label: "Videos", path: "/dashboard/videos", badge: "8" },
-    ],
-  },
-  {
-    label: "Website",
-    items: [
-      { icon: "🎨", label: "Theme", path: "/dashboard/theme", badge: "New" },
-      { icon: "📰", label: "Ticker", path: "/dashboard/ticker" },
-      { icon: "🔗", label: "Navigation", path: "/dashboard/navigation" },
+      { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
+      { icon: FileText, label: "Articles", path: "/dashboard/articles", badge: "24" },
+      { icon: Image, label: "Gallery", path: "/dashboard/gallery" },
     ],
   },
   {
     label: "Settings",
     items: [
-      { icon: "🔒", label: "Roles", path: "/dashboard/roles" },
-      { icon: "📋", label: "Audit Logs", path: "/dashboard/audit-logs" },
-      { icon: "⚙️", label: "Settings", path: "/dashboard/settings" },
+      { icon: Users, label: "Users", path: "/dashboard/users" },
+      { icon: ClipboardList, label: "Audit Logs", path: "/dashboard/audit-logs" },
+      { icon: SettingsIcon, label: "Settings", path: "/dashboard/settings" },
     ],
   },
 ];
@@ -71,14 +75,16 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-3">
-        {nav.map((section) => (
-          <div key={section.label}>
-            <div
-              style={{ color: "rgba(200,207,216,0.35)" }}
-              className="font-condensed text-[9px] font-semibold uppercase tracking-[0.1em] px-2 pt-3 pb-1"
-            >
-              {section.label}
-            </div>
+        {nav.map((section, idx) => (
+          <div key={section.label ?? `section-${idx}`}>
+            {section.label && (
+              <div
+                style={{ color: "rgba(200,207,216,0.35)" }}
+                className="font-condensed text-[9px] font-semibold uppercase tracking-[0.1em] px-2 pt-3 pb-1"
+              >
+                {section.label}
+              </div>
+            )}
             {section.items.map((item) => {
               const isActive =
                 location.pathname === item.path ||
@@ -94,7 +100,7 @@ export default function Sidebar() {
                   }
                   className="flex items-center gap-2 px-3 py-[7px] rounded-md cursor-pointer text-[12.5px] mb-[1px] transition-all duration-100 hover:bg-white/[0.06] hover:text-white"
                 >
-                  <span className="text-sm w-[18px] text-center flex-shrink-0">{item.icon}</span>
+                  <item.icon className="w-4 h-4 flex-shrink-0" strokeWidth={1.75} />
                   <span className="flex-1">{item.label}</span>
                   {item.badge && (
                     <span
@@ -143,12 +149,7 @@ export default function Sidebar() {
           style={{ color: "rgba(200,207,216,0.35)" }}
           className="hover:text-red-400 transition-colors p-1 rounded"
         >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path
-              d="M6 14H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1h3M11 11l3-3-3-3M14 8H6"
-              stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-            />
-          </svg>
+          <LogOut className="w-3.5 h-3.5" strokeWidth={1.75} />
         </button>
       </div>
     </aside>

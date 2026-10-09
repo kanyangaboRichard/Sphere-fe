@@ -1,33 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../../lib/axios";
 
 // ── Types ──────────────────────────────────────────────────────────────────
-type Status = "published" | "draft";
 
 interface Article {
-  id: number;
+  id: string;
   title: string;
-  category: string;
-  author: string;
-  status: Status;
-  date: string;
-  views: number;
+  categoryId: string | null;
+  author: { id: string; firstName: string; lastName: string } | null;
+  status: "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "SCHEDULED" | "ARCHIVED";
+  publishedAt: string | null;
+  createdAt: string;
+  viewCount: number;
 }
-
-// ── Mock data (replace with API calls) ────────────────────────────────────
-const MOCK_ARTICLES: Article[] = [
-  { id: 1, title: "Rwanda's Growing Tech Startup Ecosystem", category: "Startups", author: "Alice Uwase", status: "published", date: "2026-06-28", views: 1420 },
-  { id: 2, title: "How AI Is Reshaping Agriculture in East Africa", category: "AI", author: "Brian Nkusi", status: "published", date: "2026-06-25", views: 987 },
-  { id: 3, title: "Kigali Innovation City: What to Expect in 2027", category: "Infrastructure", author: "Alice Uwase", status: "draft", date: "2026-06-22", views: 0 },
-  { id: 4, title: "The Rise of Mobile Payments Across the Continent", category: "Fintech", author: "Diane Ingabire", status: "published", date: "2026-06-18", views: 2301 },
-  { id: 5, title: "Open Source Software Adoption in Rwandan Schools", category: "Education", author: "Brian Nkusi", status: "draft", date: "2026-06-15", views: 0 },
-  { id: 6, title: "Interview: Building Africa's First Satellite Ground Station", category: "Space", author: "Diane Ingabire", status: "published", date: "2026-06-10", views: 3140 },
-  { id: 7, title: "Cybersecurity Threats Facing SMEs in 2026", category: "Security", author: "Alice Uwase", status: "published", date: "2026-06-05", views: 810 },
-  { id: 8, title: "5G Rollout Timeline: Rwanda vs. the Region", category: "Telecom", author: "Brian Nkusi", status: "draft", date: "2026-05-30", views: 0 },
-];
-
-const CATEGORIES = ["All", "AI", "Startups", "Fintech", "Infrastructure", "Education", "Security", "Telecom", "Space"];
 
 // ── Delete confirm modal ───────────────────────────────────────────────────
 function DeleteModal({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
@@ -57,10 +44,13 @@ function DeleteModal({ title, onConfirm, onCancel }: { title: string; onConfirm:
 // ── Main Page ─────────────────────────────────────────────────────────────
 export default function ArticlesPage() {
   const navigate = useNavigate();
-  const [articles, setArticles] = useState<Article[]>(MOCK_ARTICLES);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+
   const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState<"all" | Status>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">("all");
   const [deleteTarget, setDeleteTarget] = useState<Article | null>(null);
   const [toast, setToast] = useState("");
 
@@ -69,29 +59,64 @@ export default function ArticlesPage() {
     setTimeout(() => setToast(""), 2800);
   };
 
-  const filtered = articles.filter(a => {
-    const matchSearch = a.title.toLowerCase().includes(search.toLowerCase()) || a.author.toLowerCase().includes(search.toLowerCase());
-    const matchCat = categoryFilter === "All" || a.category === categoryFilter;
-    const matchStatus = statusFilter === "all" || a.status === statusFilter;
-    return matchSearch && matchCat && matchStatus;
-  });
+  const loadArticles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get("/articles", {
+        params: {
+          search: search || undefined,
+          status: statusFilter !== "all" ? statusFilter : undefined,
+          limit: 100,
+        },
+      });
+      const data = res.data.data ?? res.data;
+      setArticles(data.articles ?? data);
+      setTotalCount(data.total ?? (data.articles ?? data).length);
+    } catch (err: any) {
+      setError(err.response?.data?.message || "Failed to load articles");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, statusFilter]);
 
-  const toggleStatus = (id: number) => {
-    const art = articles.find(a => a.id === id);
-    setArticles(prev => prev.map(a => a.id === id ? { ...a, status: a.status === "published" ? "draft" : "published" } : a));
-    if (art) showToast(`"${art.title.slice(0, 36)}…" ${art.status === "published" ? "moved to draft" : "published"}`);
+  useEffect(() => {
+    const timeout = setTimeout(loadArticles, search ? 300 : 0);
+    return () => clearTimeout(timeout);
+  }, [loadArticles, search]);
+
+  const toggleStatus = async (article: Article) => {
+    const willPublish = article.status !== "PUBLISHED";
+    // optimistic update
+    setArticles(prev => prev.map(a =>
+      a.id === article.id ? { ...a, status: willPublish ? "PUBLISHED" : "DRAFT" } : a
+    ));
+    try {
+      await api.post(`/articles/${article.id}/${willPublish ? "publish" : "unpublish"}`);
+      showToast(`"${article.title.slice(0, 36)}…" ${willPublish ? "published" : "moved to draft"}`);
+    } catch (err: any) {
+      showToast("Failed to update status — refreshing list");
+      loadArticles();
+    }
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deleteTarget) return;
-    setArticles(prev => prev.filter(a => a.id !== deleteTarget.id));
-    showToast(`"${deleteTarget.title.slice(0, 36)}…" deleted`);
+    const target = deleteTarget;
+    setArticles(prev => prev.filter(a => a.id !== target.id));
     setDeleteTarget(null);
+    try {
+      await api.delete(`/articles/${target.id}`);
+      showToast(`"${target.title.slice(0, 36)}…" deleted`);
+    } catch (_err: any) {
+      showToast("Delete failed — refreshing list");
+      loadArticles();
+    }
   };
 
-  const totalPublished = articles.filter(a => a.status === "published").length;
-  const totalDraft = articles.filter(a => a.status === "draft").length;
-  const totalViews = articles.reduce((s, a) => s + a.views, 0);
+  const totalPublished = articles.filter(a => a.status === "PUBLISHED").length;
+  const totalDraft = articles.length - totalPublished;
+  const totalViews = articles.reduce((s, a) => s + (a.viewCount || 0), 0);
 
   return (
     <>
@@ -112,7 +137,7 @@ export default function ArticlesPage() {
         .ap-stat-value { font-family: 'Barlow Condensed', sans-serif; font-size: 32px; font-weight: 700; color: #111418; line-height: 1; }
         .ap-stat-sub { font-size: 11px; color: #8a95a3; margin-top: 4px; }
 
-        .ap-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .ap-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
         .ap-search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 320px; }
         .ap-search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #8a95a3; pointer-events: none; }
         .ap-search-input { width: 100%; padding: 9px 12px 9px 34px; border: 1px solid #e2e4e8; border-radius: 8px; font-size: 13px; color: #111418; background: #fff; outline: none; font-family: 'Barlow', sans-serif; transition: border-color 0.15s; }
@@ -122,11 +147,6 @@ export default function ArticlesPage() {
         .ap-filter-select:focus { border-color: #00C8E0; }
         .ap-new-btn { margin-left: auto; display: flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 8px; border: none; background: #00C8E0; color: #fff; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
         .ap-new-btn:hover { background: #00afc6; }
-
-        .ap-cat-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
-        .ap-cat-pill { padding: 5px 13px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid #e2e4e8; background: #fff; color: #6b7280; cursor: pointer; transition: all 0.12s; font-family: 'Barlow', sans-serif; }
-        .ap-cat-pill:hover { border-color: #00C8E0; color: #00C8E0; }
-        .ap-cat-pill.active { background: #00C8E0; border-color: #00C8E0; color: #fff; }
 
         .ap-table-wrap { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; overflow: hidden; }
         .ap-table-head { display: grid; grid-template-columns: 2fr 1fr 1fr 110px 80px 90px; padding: 11px 20px; background: #f8f9fb; border-bottom: 1px solid #e8eaed; }
@@ -149,6 +169,9 @@ export default function ArticlesPage() {
         .ap-empty { padding: 56px 20px; text-align: center; }
         .ap-empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
         .ap-empty-sub { font-size: 13px; color: #8a95a3; }
+        .ap-error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; font-size: 12px; padding: 8px 12px; border-radius: 7px; margin-bottom: 16px; }
+        .ap-skeleton-row { height: 52px; border-bottom: 1px solid #f0f2f5; background: linear-gradient(90deg, #fff 0%, #f8f9fb 50%, #fff 100%); background-size: 200% 100%; animation: ap-shimmer 1.4s ease-in-out infinite; }
+        @keyframes ap-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
 
         .ap-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #111418; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; z-index: 200; pointer-events: none; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
       `}</style>
@@ -172,45 +195,38 @@ export default function ArticlesPage() {
         <div className="ap-stats-row">
           <div className="ap-stat-card">
             <div className="ap-stat-label">Total articles</div>
-            <div className="ap-stat-value">{articles.length}</div>
-            <div className="ap-stat-sub">{totalPublished} published · {totalDraft} drafts</div>
+            <div className="ap-stat-value">{loading ? "—" : totalCount}</div>
+            <div className="ap-stat-sub">{totalPublished} published · {totalDraft} drafts (loaded)</div>
           </div>
           <div className="ap-stat-card">
             <div className="ap-stat-label">Total views</div>
-            <div className="ap-stat-value">{totalViews.toLocaleString()}</div>
-            <div className="ap-stat-sub">Across all published articles</div>
+            <div className="ap-stat-value">{loading ? "—" : totalViews.toLocaleString()}</div>
+            <div className="ap-stat-sub">Across loaded articles</div>
           </div>
           <div className="ap-stat-card">
-            <div className="ap-stat-label">Categories</div>
-            <div className="ap-stat-value">{CATEGORIES.length - 1}</div>
-            <div className="ap-stat-sub">Active content tags</div>
+            <div className="ap-stat-label">Showing</div>
+            <div className="ap-stat-value">{loading ? "—" : articles.length}</div>
+            <div className="ap-stat-sub">of {totalCount} total</div>
           </div>
         </div>
+
+        {error && <div className="ap-error">{error}</div>}
 
         {/* Toolbar */}
         <div className="ap-toolbar">
           <div className="ap-search-wrap">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" /><path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            <input className="ap-search-input" placeholder="Search articles or authors…" value={search} onChange={e => setSearch(e.target.value)} />
+            <input className="ap-search-input" placeholder="Search articles…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <select className="ap-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
             <option value="all">All statuses</option>
-            <option value="published">Published</option>
-            <option value="draft">Draft</option>
+            <option value="PUBLISHED">Published</option>
+            <option value="DRAFT">Draft</option>
           </select>
           <button className="ap-new-btn" onClick={() => navigate("/dashboard/articles/new")}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
             New article
           </button>
-        </div>
-
-        {/* Category pills */}
-        <div className="ap-cat-pills">
-          {CATEGORIES.map(cat => (
-            <button key={cat} className={`ap-cat-pill${categoryFilter === cat ? " active" : ""}`} onClick={() => setCategoryFilter(cat)}>
-              {cat}
-            </button>
-          ))}
         </div>
 
         {/* Table */}
@@ -224,35 +240,43 @@ export default function ArticlesPage() {
             <div className="ap-th">Actions</div>
           </div>
 
-          {filtered.length === 0 ? (
+          {loading ? (
+            Array.from({ length: 5 }).map((_, i) => <div key={i} className="ap-skeleton-row" />)
+          ) : articles.length === 0 ? (
             <div className="ap-empty">
               <div className="ap-empty-title">No articles found</div>
-              <div className="ap-empty-sub">Try adjusting your search or filters</div>
+              <div className="ap-empty-sub">Try adjusting your search or filters, or create a new one</div>
             </div>
           ) : (
-            filtered.map(article => (
+            articles.map(article => (
               <div className="ap-table-row" key={article.id}>
                 <div>
                   <div className="ap-article-title">{article.title}</div>
                   <div className="ap-article-date">
-                    {new Date(article.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                    {new Date(article.publishedAt || article.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
                   </div>
                 </div>
                 <div className="ap-td">
-                  <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: "#f0fafb", color: "#0891b2", border: "1px solid #b2e8f0" }}>
-                    {article.category}
-                  </span>
+                  {article.categoryId ? (
+                    <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: "#f0fafb", color: "#0891b2", border: "1px solid #b2e8f0" }}>
+                      {article.categoryId}
+                    </span>
+                  ) : (
+                    <span style={{ color: "#b0b7c3" }}>—</span>
+                  )}
                 </div>
-                <div className="ap-td">{article.author}</div>
+                <div className="ap-td">
+                  {article.author ? `${article.author.firstName} ${article.author.lastName}` : "—"}
+                </div>
                 <div>
-                  <button onClick={() => toggleStatus(article.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} title="Click to toggle status">
-                    <span className={`ap-badge ap-badge-${article.status}`}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: article.status === "published" ? "#059669" : "#9ca3af", flexShrink: 0 }} />
-                      {article.status === "published" ? "Published" : "Draft"}
+                  <button onClick={() => toggleStatus(article)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} title="Click to toggle status">
+                    <span className={`ap-badge ap-badge-${article.status === "PUBLISHED" ? "published" : "draft"}`}>
+                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: article.status === "PUBLISHED" ? "#059669" : "#9ca3af", flexShrink: 0 }} />
+                      {article.status === "PUBLISHED" ? "Published" : article.status}
                     </span>
                   </button>
                 </div>
-                <div className="ap-views">{article.status === "published" ? article.views.toLocaleString() : "—"}</div>
+                <div className="ap-views">{article.status === "PUBLISHED" ? article.viewCount.toLocaleString() : "—"}</div>
                 <div className="ap-actions">
                   <button className="ap-action-btn" title="Edit" onClick={() => navigate(`/dashboard/articles/${article.id}`)}>
                     <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-9 9H2v-3L11 2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
@@ -266,9 +290,9 @@ export default function ArticlesPage() {
           )}
         </div>
 
-        {filtered.length > 0 && (
+        {!loading && articles.length > 0 && (
           <div style={{ marginTop: 12, fontSize: 12, color: "#8a95a3" }}>
-            Showing {filtered.length} of {articles.length} articles
+            Showing {articles.length} of {totalCount} articles
           </div>
         )}
       </div>

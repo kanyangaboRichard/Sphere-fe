@@ -1,26 +1,31 @@
+import { useState, useEffect } from "react";
 import Topbar from "../../components/layouts/Topbar";
 import { useNavigate } from "react-router-dom";
+import api from "../../lib/axios";
 
-const stats = [
-  { label: "Total Articles", value: "24", sub: "+3 this week", color: "text-cyan" },
-  { label: "Published", value: "18", sub: "Live on website", color: "text-green-500" },
-  { label: "Drafts", value: "5", sub: "In progress", color: "text-amber-500" },
-  { label: "Scheduled", value: "3", sub: "Upcoming", color: "text-violet-500" },
-];
+interface RecentArticle {
+  id: string;
+  title: string;
+  categoryId: string | null;
+  status: "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "SCHEDULED" | "ARCHIVED";
+  createdAt: string;
+  publishedAt: string | null;
+}
 
-const recent = [
-  { title: "BK Tech's mobile lending platform", category: "Fintech", status: "PUBLISHED", time: "3 hrs ago" },
-  { title: "Rwandan hospitals using AI diagnostics", category: "AI", status: "PUBLISHED", time: "4 hrs ago" },
-  { title: "Kaspersky opens Kigali threat intel hub", category: "Cybersecurity", status: "IN_REVIEW", time: "Yesterday" },
-  { title: "Samsung Galaxy S25 FE review", category: "Review", status: "PUBLISHED", time: "6 hrs ago" },
-  { title: "Tablet programme turning rural schools digital", category: "Education", status: "DRAFT", time: "2 days ago" },
-];
+interface Stats {
+  total: number;
+  published: number;
+  draft: number;
+  scheduled: number;
+  inReview: number;
+}
 
 const statusStyle: Record<string, string> = {
   PUBLISHED: "bg-green-50 text-green-700",
   DRAFT: "bg-gray-100 text-gray-500",
   IN_REVIEW: "bg-amber-50 text-amber-700",
   SCHEDULED: "bg-violet-50 text-violet-700",
+  ARCHIVED: "bg-gray-100 text-gray-400",
 };
 
 const statusLabel: Record<string, string> = {
@@ -28,24 +33,70 @@ const statusLabel: Record<string, string> = {
   DRAFT: "Draft",
   IN_REVIEW: "In review",
   SCHEDULED: "Scheduled",
+  ARCHIVED: "Archived",
 };
 
+// Only routes that actually exist per the current sidebar — Categories,
+// Authors, Theme, and standalone Videos were all dropped July 14.
 const quickActions = [
   { label: "Write new article", icon: "📄", path: "/dashboard/articles/new" },
-  { label: "Add category", icon: "🏷️", path: "/dashboard/categories" },
-  { label: "Add author", icon: "✍️", path: "/dashboard/authors" },
-  { label: "Upload video", icon: "🎬", path: "/dashboard/videos" },
-  { label: "Edit theme", icon: "🎨", path: "/dashboard/theme" },
+  { label: "View gallery", icon: "🖼️", path: "/dashboard/gallery" },
 ];
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr${hrs !== 1 ? "s" : ""} ago`;
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "Yesterday";
+  return `${days} days ago`;
+}
 
 export default function DashboardPage() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("sphere_user") || "{}");
 
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [recent, setRecent] = useState<RecentArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [statsRes, recentRes] = await Promise.all([
+          api.get("/articles/stats"),
+          api.get("/articles", { params: { limit: 5, page: 1 } }),
+        ]);
+        setStats(statsRes.data.data ?? statsRes.data);
+        const recentData = recentRes.data.data ?? recentRes.data;
+        setRecent(recentData.articles ?? recentData);
+      } catch (err: any) {
+        setError(err.response?.data?.message || "Failed to load dashboard data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, []);
+
+  const statCards = stats
+    ? [
+        { label: "Total Articles", value: stats.total, sub: "All statuses", color: "text-cyan" },
+        { label: "Published", value: stats.published, sub: "Live on website", color: "text-green-500" },
+        { label: "Drafts", value: stats.draft, sub: "In progress", color: "text-amber-500" },
+        { label: "Scheduled", value: stats.scheduled, sub: "Upcoming", color: "text-violet-500" },
+      ]
+    : [];
+
   return (
     <>
       <Topbar
-        title={`Good morning, ${user.firstName} 👋`}
+        title={`Good morning, ${user.firstName || "there"}`}
         subtitle="Here's what's happening with Sphere Tech today"
         actions={
           <button
@@ -59,21 +110,33 @@ export default function DashboardPage() {
 
       <div className="p-6 flex flex-col gap-5">
 
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-2 rounded-lg">
+            {error}
+          </div>
+        )}
+
         {/* Stats */}
         <div className="grid grid-cols-4 gap-3">
-          {stats.map((s) => (
-            <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="text-[11px] text-gray-400 uppercase tracking-[0.08em] mb-2 font-medium">
-                {s.label}
+          {loading ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="bg-white border border-gray-200 rounded-xl p-5 h-[92px] animate-pulse" />
+            ))
+          ) : (
+            statCards.map((s) => (
+              <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-5">
+                <div className="text-[11px] text-gray-400 uppercase tracking-[0.08em] mb-2 font-medium">
+                  {s.label}
+                </div>
+                <div className="font-condensed text-[36px] font-bold text-gray-900 leading-none">
+                  {s.value}
+                </div>
+                <div className={`text-[11px] mt-1 font-medium ${s.color}`}>
+                  {s.sub}
+                </div>
               </div>
-              <div className="font-condensed text-[36px] font-bold text-gray-900 leading-none">
-                {s.value}
-              </div>
-              <div className={`text-[11px] mt-1 font-medium ${s.color}`}>
-                {s.sub}
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
 
         {/* Main content */}
@@ -93,20 +156,38 @@ export default function DashboardPage() {
               </button>
             </div>
             <div>
-              {recent.map((a, i) => (
-                <div key={i} className="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors cursor-pointer">
-                  <div className="flex-1 text-[13px] text-gray-800 font-medium leading-snug line-clamp-1">
-                    {a.title}
-                  </div>
-                  <span className="text-[10px] px-2 py-[3px] rounded-full bg-gray-100 text-gray-500 font-medium whitespace-nowrap">
-                    {a.category}
-                  </span>
-                  <span className={`text-[10px] px-2 py-[3px] rounded-full font-medium whitespace-nowrap ${statusStyle[a.status]}`}>
-                    {statusLabel[a.status]}
-                  </span>
-                  <span className="text-[11px] text-gray-400 whitespace-nowrap">{a.time}</span>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-[46px] border-b border-gray-50 last:border-b-0 animate-pulse bg-gray-50/50" />
+                ))
+              ) : recent.length === 0 ? (
+                <div className="px-5 py-8 text-center text-[12px] text-gray-400">
+                  No articles yet — create your first one.
                 </div>
-              ))}
+              ) : (
+                recent.map((a) => (
+                  <div
+                    key={a.id}
+                    onClick={() => navigate(`/dashboard/articles/${a.id}`)}
+                    className="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-b-0 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex-1 text-[13px] text-gray-800 font-medium leading-snug line-clamp-1">
+                      {a.title}
+                    </div>
+                    {a.categoryId && (
+                      <span className="text-[10px] px-2 py-[3px] rounded-full bg-gray-100 text-gray-500 font-medium whitespace-nowrap">
+                        {a.categoryId}
+                      </span>
+                    )}
+                    <span className={`text-[10px] px-2 py-[3px] rounded-full font-medium whitespace-nowrap ${statusStyle[a.status]}`}>
+                      {statusLabel[a.status]}
+                    </span>
+                    <span className="text-[11px] text-gray-400 whitespace-nowrap">
+                      {timeAgo(a.publishedAt || a.createdAt)}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 
@@ -130,30 +211,6 @@ export default function DashboardPage() {
                     <span className="text-sm">{q.icon}</span>
                     {q.label}
                   </button>
-                ))}
-              </div>
-            </div>
-
-            {/* System status */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <div className="font-condensed text-sm font-bold text-gray-900 uppercase tracking-[0.06em]">
-                  System
-                </div>
-              </div>
-              <div className="p-4 flex flex-col gap-3">
-                {[
-                  { label: "API", status: "Online" },
-                  { label: "Database", status: "Connected" },
-                  { label: "Cloudinary", status: "Ready" },
-                ].map((sys) => (
-                  <div key={sys.label} className="flex items-center justify-between text-[12px]">
-                    <span className="text-gray-500">{sys.label}</span>
-                    <span className="flex items-center gap-1.5 text-green-600 font-medium">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
-                      {sys.status}
-                    </span>
-                  </div>
                 ))}
               </div>
             </div>
