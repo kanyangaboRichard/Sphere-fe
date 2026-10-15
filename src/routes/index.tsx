@@ -5,6 +5,8 @@ import DashboardPage from "../pages/dashboard/DashboardPage";
 import ArticlesPage from "../pages/articles/ArticlesPage";
 import NewArticlesPage from "../pages/articles/NewArticlesPage";
 import GalleryPage from "../pages/gallery/GalleryPage"; 
+import ShopCategoriesPage from "../pages/shop-categories/ShopCategoriesPage";
+import ShopProductsPage from "../pages/shop-categories/ShopProductsPage";
 
 
 
@@ -54,7 +56,10 @@ export default function AppRoutes() {
         <Route path="gallery" element={<GalleryPage />} />
         <Route path="authors" element={<ComingSoon title="Authors" />} />
         <Route path="media" element={<ComingSoon title="Media Library" />} />
-        <Route path="videos" element={<ComingSoon title="Videos" />} />
+        <Route path="/dashboard/shop-categories" element={<ShopCategoriesPage />} />
+        <Route path="/dashboard/shop-products" element={<ShopProductsPage />} />
+        
+        
 
         {/* Website */}
         <Route path="theme" element={<ComingSoon title="Theme & Appearance" />} />
