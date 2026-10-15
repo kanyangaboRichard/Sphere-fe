@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../../lib/axios";
 import { uploadMedia } from "../../lib/media";
+import RichTextEditor from "../../components/RichTextEditor";
 
 const THEME_PRESETS = [
   { key: "TECH_DARK", label: "Tech dark", bg: "#0d1a2a", accent: "#00C8E0", accentText: "#0d1a2a" },
@@ -28,14 +29,6 @@ const TYPES = [
   { key: "VIDEO", label: "Video" },
   { key: "NEWS", label: "News" },
 ];
-
-type BodyMediaItem = {
-  id: string;
-  type: "image" | "video";
-  file: File;
-  url: string;
-  name: string;
-};
 
 const slugify = (s: string) =>
   s
@@ -65,13 +58,9 @@ export default function NewArticlePage() {
   const [featuredImage, setFeaturedImage] = useState<File | null>(null);
   const [featuredImagePreview, setFeaturedImagePreview] = useState<string | null>(null);
   const [featuredDragActive, setFeaturedDragActive] = useState(false);
-  const [galleryMedia, setGalleryMedia] = useState<BodyMediaItem[]>([]);
   const [showPreview, setShowPreview] = useState(false);
 
   const featuredInputRef = useRef<HTMLInputElement>(null);
-  const galleryImageInputRef = useRef<HTMLInputElement>(null);
-  const galleryVideoInputRef = useRef<HTMLInputElement>(null);
-  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -118,7 +107,6 @@ export default function NewArticlePage() {
   useEffect(() => {
     return () => {
       if (featuredImagePreview) URL.revokeObjectURL(featuredImagePreview);
-      galleryMedia.forEach(m => URL.revokeObjectURL(m.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -219,61 +207,33 @@ export default function NewArticlePage() {
     if (featuredInputRef.current) featuredInputRef.current.value = "";
   };
 
-  // ---- Gallery handlers ----
-  const handleGalleryFile = (file: File | undefined | null, type: "image" | "video") => {
-    if (!file) return;
-    if (type === "image" && !file.type.startsWith("image/")) {
-      showToast("Please select an image file");
-      return;
-    }
-    if (type === "video" && !file.type.startsWith("video/")) {
-      showToast("Please select a video file");
-      return;
-    }
-    const id = `gal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const url = URL.createObjectURL(file);
-    setGalleryMedia(prev => [...prev, { id, type, file, url, name: file.name }]);
-  };
-
-  const removeGalleryMedia = (id: string) => {
-    setGalleryMedia(prev => {
-      const item = prev.find(m => m.id === id);
-      if (item) URL.revokeObjectURL(item.url);
-      return prev.filter(m => m.id !== id);
-    });
-  };
-
   const handleSave = async (status = form.status) => {
-  if (!form.title.trim()) return showToast("Title is required");
-  if (!form.categoryId) return showToast("Select or create a category from the list");
-  if (!form.overview.trim()) return showToast("Overview is required");
+    if (!form.title.trim()) return showToast("Title is required");
+    if (!form.categoryId) return showToast("Select or create a category from the list");
+    if (!form.overview.trim()) return showToast("Overview is required");
 
-  setSaving(true);
-  try {
-    // Upload media first (see note below)
-    const coverMediaId = featuredImage ? (await uploadMedia(featuredImage)).id : null;
-    const galleryMediaIds = await Promise.all(
-      galleryMedia.map(m => uploadMedia(m.file).then(r => r.id))
-    );
+    setSaving(true);
+    try {
+      const coverMediaId = featuredImage ? (await uploadMedia(featuredImage)).id : null;
 
-    const { overview, authorId, ...rest } = form;
-    await api.post("/articles", {
-      ...rest,
-      status,
-      excerpt: overview.trim(),     
-      authorId: authorId || null,
-      coverMediaId,
-      galleryMediaIds,
-    });
+      const { overview, authorId, ...rest } = form;
+      await api.post("/articles", {
+        ...rest,
+        status,
+        excerpt: overview.trim(),
+        authorId: authorId || null,
+        coverMediaId,
+      });
 
-    showToast("Article saved!");
-    setTimeout(() => navigate("/dashboard/articles"), 1000);
-  } catch (err: any) {
-    showToast(err.response?.data?.message || "Failed to save article");
-  } finally {
-    setSaving(false);
-  }
-};
+      showToast("Article saved!");
+      setTimeout(() => navigate("/dashboard/articles"), 1000);
+    } catch (err: any) {
+      showToast(err.response?.data?.message || "Failed to save article");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const preset = THEME_PRESETS.find(p => p.key === form.themePreset) || THEME_PRESETS[0];
 
   const filteredCategories = categories.filter(c =>
@@ -306,12 +266,17 @@ export default function NewArticlePage() {
         .na-title-input::placeholder { color: #c8cfd8 !important; opacity: 1 !important; }
         .na-input::placeholder { color: #9ca3af !important; opacity: 1 !important; }
         .na-textarea::placeholder { color: #9ca3af !important; opacity: 1 !important; }
-        .na-body-textarea::placeholder { color: #9ca3af !important; opacity: 1 !important; }
         .na-body-wrap { background: #fff; border: 1px solid #e2e4e8; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
-        .na-toolbar { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid #f0f2f4; background: #f8f9fb; flex-wrap: wrap; }
+        .na-toolbar { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid #f0f2f4; background: #f8f9fb; flex-wrap: wrap; align-items: center; }
         .na-tool-btn { padding: 4px 8px; border-radius: 4px; border: none; background: none; cursor: pointer; font-size: 12px; font-weight: 600; color: #6b7280; transition: all 0.1s; }
         .na-tool-btn:hover { background: #e8eaed; color: #111418; }
-        .na-body-textarea { width: 100%; min-height: 280px; padding: 14px 16px; border: none; outline: none; font-size: 13px; color: #374151; font-family: 'Barlow', sans-serif; line-height: 1.8; resize: none; box-sizing: border-box; }
+        .na-tool-btn.active { background: #e0f9fc; color: #00afc6; }
+        .na-tool-font-select { font-size: 11px; border: 1px solid #e2e4e8; border-radius: 5px; padding: 3px 6px; background: #fff; color: #374151; }
+        .na-body-editor { min-height: 280px; padding: 14px 16px; font-size: 13px; color: #374151; font-family: 'Barlow', sans-serif; line-height: 1.8; outline: none; }
+        .na-body-editor p { margin: 0 0 12px; }
+        .na-body-editor img { max-width: 100%; border-radius: 8px; margin: 12px 0; display: block; }
+        .na-body-editor a { color: #00afc6; text-decoration: underline; }
+        .na-body-editor blockquote { border-left: 3px solid #00C8E0; margin: 12px 0; padding-left: 14px; color: #6b7280; font-style: italic; }
         .na-toggle-row { display: flex; align-items: center; justify-content: space-between; }
         .na-toggle-label { font-size: 12px; color: #374151; }
         .na-ttrack { position: relative; width: 32px; height: 18px; border-radius: 9px; background: #d1d5db; cursor: pointer; display: inline-block; transition: background 0.2s; flex-shrink: 0; border: none; }
@@ -357,18 +322,6 @@ export default function NewArticlePage() {
         .na-featured-filename { font-size: 11px; padding: 6px 8px; color: #6b7280; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .na-featured-filename-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .na-remove-link { background: none; border: none; color: #dc2626; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; flex-shrink: 0; }
-
-        /* --- Gallery grid --- */
-        .na-gallery-grid { display: flex; flex-wrap: wrap; gap: 10px; }
-        .na-gallery-add-tile { width: 96px; height: 96px; border-radius: 10px; border: 1.5px dashed #d1d5db; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; transition: all 0.15s; background: #fafbfc; flex-shrink: 0; }
-        .na-gallery-add-tile:hover { border-color: #00C8E0; background: #f0fcfe; }
-        .na-gallery-add-icon { font-size: 20px; opacity: 0.6; }
-        .na-gallery-add-label { font-size: 10px; font-weight: 600; color: #6b7280; text-align: center; }
-        .na-gallery-tile { position: relative; width: 96px; height: 96px; border-radius: 10px; overflow: hidden; border: 1px solid #e2e4e8; flex-shrink: 0; background: #111418; }
-        .na-gallery-tile img, .na-gallery-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .na-gallery-tile-badge { position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.6); border-radius: 4px; font-size: 11px; padding: 1px 4px; line-height: 1.3; }
-        .na-gallery-tile-remove { position: absolute; top: 4px; right: 4px; background: rgba(17,20,24,0.75); color: #fff; border: none; border-radius: 5px; width: 20px; height: 20px; font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; }
-        .na-gallery-tile:hover .na-gallery-tile-remove { opacity: 1; }
 
         /* --- Preview modal --- */
         .na-preview-overlay { position: fixed; inset: 0; background: rgba(17,20,24,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 32px; }
@@ -540,18 +493,10 @@ export default function NewArticlePage() {
             {/* Body */}
             <div className="na-card">
               <div className="na-card-header">Article body</div>
-              <div className="na-body-wrap" style={{ margin: "0 14px 14px" }}>
-                <div className="na-toolbar">
-                  {["B", "I", "H1", "H2", "H3", "—", "Link", "Quote"].map(t => (
-                    <button key={t} className="na-tool-btn" style={{ fontStyle: t === "I" ? "italic" : "normal" }}>{t}</button>
-                  ))}
-                </div>
-                <textarea
-                  ref={bodyTextareaRef}
-                  className="na-body-textarea"
-                  placeholder="Write your article here…"
+              <div style={{ margin: "0 14px 14px" }}>
+                <RichTextEditor
                   value={form.body}
-                  onChange={e => setField("body", e.target.value)}
+                  onChange={html => setField("body", html)}
                 />
               </div>
             </div>
@@ -570,51 +515,6 @@ export default function NewArticlePage() {
                   value={form.pullQuote}
                   onChange={e => setField("pullQuote", e.target.value)}
                 />
-              </div>
-            </div>
-
-            {/* Gallery */}
-            <div className="na-card">
-              <div className="na-card-header">Gallery</div>
-              <div className="na-card-body">
-                <p style={{ fontSize: 11, color: "#9ca3af", margin: "0 0 4px" }}>
-                  Images and videos attached here show as a gallery on the article, separate from anything inserted into the body.
-                </p>
-                <div className="na-gallery-grid">
-                  <div className="na-gallery-add-tile" onClick={() => galleryImageInputRef.current?.click()}>
-                    <span className="na-gallery-add-icon">🖼️</span>
-                    <span className="na-gallery-add-label">Image</span>
-                  </div>
-                  <div className="na-gallery-add-tile" onClick={() => galleryVideoInputRef.current?.click()}>
-                    <span className="na-gallery-add-icon">🎬</span>
-                    <span className="na-gallery-add-label">Video</span>
-                  </div>
-                  <input
-                    ref={galleryImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    onChange={e => { handleGalleryFile(e.target.files?.[0], "image"); e.target.value = ""; }}
-                  />
-                  <input
-                    ref={galleryVideoInputRef}
-                    type="file"
-                    accept="video/*"
-                    style={{ display: "none" }}
-                    onChange={e => { handleGalleryFile(e.target.files?.[0], "video"); e.target.value = ""; }}
-                  />
-                  {galleryMedia.map(m => (
-                    <div key={m.id} className="na-gallery-tile" title={m.name}>
-                      {m.type === "image" ? (
-                        <img src={m.url} alt={m.name} />
-                      ) : (
-                        <video src={m.url} muted />
-                      )}
-                      <span className="na-gallery-tile-badge">{m.type === "video" ? "🎬" : "🖼️"}</span>
-                      <button className="na-gallery-tile-remove" onClick={() => removeGalleryMedia(m.id)} title="Remove">×</button>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           </div>
@@ -824,21 +724,11 @@ export default function NewArticlePage() {
                 </div>
               )}
               {form.body && (
-                <div style={{ marginTop: 14, fontSize: 13, color: "#374151", lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
-                  {form.body}
-                </div>
-              )}
-              {galleryMedia.length > 0 && (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", padding: "0 0 6px" }}>Gallery</div>
-                  <div className="na-gallery-grid">
-                    {galleryMedia.map(m => (
-                      <div key={m.id} className="na-gallery-tile">
-                        {m.type === "image" ? <img src={m.url} alt={m.name} /> : <video src={m.url} muted controls />}
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <div
+                  className="na-body-editor"
+                  style={{ marginTop: 14, padding: 0 }}
+                  dangerouslySetInnerHTML={{ __html: form.body }}
+                />
               )}
             </div>
           </div>

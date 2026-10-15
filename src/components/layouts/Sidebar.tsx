@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Image, Users, ClipboardList, Settings as SettingsIcon, LogOut,  } from "lucide-react";
+import { LayoutDashboard, FileText, Image, Users, ClipboardList, Settings as SettingsIcon, LogOut, ShoppingBag, Tag } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 type NavItem = {
@@ -21,6 +21,13 @@ const nav: NavSection[] = [
       { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
       { icon: FileText, label: "Articles", path: "/dashboard/articles", badge: "24" },
       { icon: Image, label: "Gallery", path: "/dashboard/gallery" },
+    ],
+  },
+  {
+    label: "Shop",
+    items: [
+      { icon: Tag, label: "Shop Categories", path: "/dashboard/shop-categories" },
+      { icon: ShoppingBag, label: "Shop Products", path: "/dashboard/shop-products" },
     ],
   },
   {
