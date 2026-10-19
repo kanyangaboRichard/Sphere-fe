@@ -75,7 +75,7 @@ export default function RichTextEditor({ value, onChange, placeholder = "Write y
         <button type="button" className="na-tool-btn" onClick={() => editor.chain().focus().setHorizontalRule().run()}>—</button>
         <button type="button" className={`na-tool-btn ${editor.isActive("link") ? "active" : ""}`} onClick={setLink}>Link</button>
         <button type="button" className={`na-tool-btn ${editor.isActive("blockquote") ? "active" : ""}`} onClick={() => editor.chain().focus().toggleBlockquote().run()}>Quote</button>
-        <span style={{ width: 1, alignSelf: "stretch", background: "#e2e4e8", margin: "0 4px" }} />
+        <span style={{ width: 1, alignSelf: "stretch", background: "var(--c-border-strong, #e2e4e8)", margin: "0 4px" }} />
         <select
           className="na-tool-font-select"
           defaultValue=""
