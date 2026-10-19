@@ -1,39 +1,97 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Search, Plus, Pencil, Eye, EyeOff, Trash2, X } from "lucide-react";
+import Topbar from "../../components/layouts/Topbar";
 import api from "../../lib/axios";
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+type Status = "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "SCHEDULED" | "ARCHIVED";
 
 interface Article {
   id: string;
   title: string;
   categoryId: string | null;
+  category?: { id: string; name: string } | null;
   author: { id: string; firstName: string; lastName: string } | null;
-  status: "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "SCHEDULED" | "ARCHIVED";
+  status: Status;
   publishedAt: string | null;
   createdAt: string;
   viewCount: number;
 }
 
-// ── Delete confirm modal ───────────────────────────────────────────────────
-function DeleteModal({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
+interface Stats {
+  total: number;
+  published: number;
+  draft: number;
+  scheduled: number;
+  inReview: number;
+}
+
+const TABS: { key: "all" | Status; label: string; stat: keyof Stats }[] = [
+  { key: "all", label: "All", stat: "total" },
+  { key: "PUBLISHED", label: "Published", stat: "published" },
+  { key: "DRAFT", label: "Drafts", stat: "draft" },
+  { key: "IN_REVIEW", label: "In review", stat: "inReview" },
+  { key: "SCHEDULED", label: "Scheduled", stat: "scheduled" },
+];
+
+const VALID = new Set(TABS.map((t) => t.key));
+
+const statusChip: Record<Status, string> = {
+  PUBLISHED: "bg-emerald-50 text-emerald-700",
+  DRAFT: "bg-gray-100 text-gray-600",
+  IN_REVIEW: "bg-amber-50 text-amber-700",
+  SCHEDULED: "bg-violet-50 text-violet-700",
+  ARCHIVED: "bg-gray-100 text-gray-400",
+};
+const statusDot: Record<Status, string> = {
+  PUBLISHED: "bg-emerald-500",
+  DRAFT: "bg-gray-300",
+  IN_REVIEW: "bg-amber-500",
+  SCHEDULED: "bg-violet-500",
+  ARCHIVED: "bg-gray-300",
+};
+const statusLabel: Record<Status, string> = {
+  PUBLISHED: "Published",
+  DRAFT: "Draft",
+  IN_REVIEW: "In review",
+  SCHEDULED: "Scheduled",
+  ARCHIVED: "Archived",
+};
+
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00C8E0] focus-visible:ring-offset-1";
+
+// ── Delete confirm dialog ──────────────────────────────────────────────────
+
+function DeleteDialog({ title, onConfirm, onCancel }: { title: string; onConfirm: () => void; onCancel: () => void }) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,32,0.55)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ background: "#fff", borderRadius: 12, padding: "32px 28px", width: 380, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
-        <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#fff1f1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 16 }}>
-          <svg width="18" height="18" viewBox="0 0 16 16" fill="none"><path d="M6 2h4M2 4h12M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4" stroke="#dc2626" strokeWidth="1.4" strokeLinecap="round" /></svg>
-        </div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#111418", marginBottom: 8, fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.02em" }}>Delete article?</div>
-        <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.6, marginBottom: 24 }}>
-          "<span style={{ color: "#111418" }}>{title}</span>" will be permanently removed and cannot be recovered.
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={onCancel} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "1px solid #e2e4e8", background: "#fff", color: "#374151", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>
-            Cancel
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-navy-900/60 p-4"
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="del-title" className="bg-white rounded-xl w-full max-w-[400px] p-6 shadow-xl">
+        <h2 id="del-title" className="font-condensed text-lg font-bold text-gray-900 mb-2">Delete this article?</h2>
+        <p className="text-sm text-gray-600 leading-relaxed mb-6">
+          <span className="font-medium text-gray-900">"{title}"</span> will be permanently removed. This can't be undone.
+        </p>
+        <div className="flex gap-2">
+          <button ref={cancelRef} onClick={onCancel} className={`flex-1 py-2.5 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 ${focusRing}`}>
+            Keep article
           </button>
-          <button onClick={onConfirm} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Barlow', sans-serif" }}>
-            Delete
+          <button onClick={onConfirm} className={`flex-1 py-2.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 ${focusRing}`}>
+            Delete article
           </button>
         </div>
       </div>
@@ -41,23 +99,47 @@ function DeleteModal({ title, onConfirm, onCancel }: { title: string; onConfirm:
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────
+// ── Page ───────────────────────────────────────────────────────────────────
+
 export default function ArticlesPage() {
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+
+  const rawStatus = params.get("status") ?? "all";
+  const statusFilter = (VALID.has(rawStatus as any) ? rawStatus : "all") as "all" | Status;
+
   const [articles, setArticles] = useState<Article[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [totalCount, setTotalCount] = useState(0);
-
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "PUBLISHED" | "DRAFT">("all");
   const [deleteTarget, setDeleteTarget] = useState<Article | null>(null);
   const [toast, setToast] = useState("");
+  const toastTimer = useRef<number | undefined>(undefined);
 
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(""), 2800);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2800);
   };
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  const setStatus = (key: "all" | Status) => {
+    const next = new URLSearchParams(params);
+    if (key === "all") next.delete("status");
+    else next.set("status", key);
+    setParams(next, { replace: true });
+  };
+
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await api.get("/articles/stats");
+      setStats(res.data.data ?? res.data);
+    } catch {
+      /* tab counts are optional */
+    }
+  }, []);
 
   const loadArticles = useCallback(async () => {
     setLoading(true);
@@ -71,31 +153,37 @@ export default function ArticlesPage() {
         },
       });
       const data = res.data.data ?? res.data;
-      setArticles(data.articles ?? data);
-      setTotalCount(data.total ?? (data.articles ?? data).length);
+      const list = data.articles ?? data;
+      setArticles(list);
+      setTotalCount(data.total ?? list.length);
     } catch (err: any) {
-      setError(err.response?.data?.message || "Failed to load articles");
+      setError(err.response?.data?.message || "Couldn't load articles. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
   }, [search, statusFilter]);
 
   useEffect(() => {
-    const timeout = setTimeout(loadArticles, search ? 300 : 0);
-    return () => clearTimeout(timeout);
+    const t = setTimeout(loadStats, 0);
+    return () => clearTimeout(t);
+  }, [loadStats]);
+
+  useEffect(() => {
+    const t = setTimeout(loadArticles, search ? 300 : 0);
+    return () => clearTimeout(t);
   }, [loadArticles, search]);
 
-  const toggleStatus = async (article: Article) => {
+  const togglePublish = async (article: Article) => {
     const willPublish = article.status !== "PUBLISHED";
-    // optimistic update
-    setArticles(prev => prev.map(a =>
-      a.id === article.id ? { ...a, status: willPublish ? "PUBLISHED" : "DRAFT" } : a
-    ));
+    setArticles((prev) =>
+      prev.map((a) => (a.id === article.id ? { ...a, status: willPublish ? "PUBLISHED" : "DRAFT" } : a))
+    );
     try {
       await api.post(`/articles/${article.id}/${willPublish ? "publish" : "unpublish"}`);
-      showToast(`"${article.title.slice(0, 36)}…" ${willPublish ? "published" : "moved to draft"}`);
-    } catch (err: any) {
-      showToast("Failed to update status — refreshing list");
+      showToast(`${willPublish ? "Published" : "Moved to drafts"}: ${article.title.slice(0, 40)}`);
+      loadStats();
+    } catch {
+      showToast("Couldn't update the article. Refreshing the list.");
       loadArticles();
     }
   };
@@ -103,207 +191,230 @@ export default function ArticlesPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     const target = deleteTarget;
-    setArticles(prev => prev.filter(a => a.id !== target.id));
+    setArticles((prev) => prev.filter((a) => a.id !== target.id));
     setDeleteTarget(null);
     try {
       await api.delete(`/articles/${target.id}`);
-      showToast(`"${target.title.slice(0, 36)}…" deleted`);
-    } catch (_err: any) {
-      showToast("Delete failed — refreshing list");
+      showToast(`Deleted: ${target.title.slice(0, 40)}`);
+      loadStats();
+    } catch {
+      showToast("Couldn't delete the article. Refreshing the list.");
       loadArticles();
     }
   };
 
-  const totalPublished = articles.filter(a => a.status === "PUBLISHED").length;
-  const totalDraft = articles.length - totalPublished;
-  const totalViews = articles.reduce((s, a) => s + (a.viewCount || 0), 0);
+  const filtering = search !== "" || statusFilter !== "all";
 
   return (
     <>
-      <style>{`
-        .ap-topbar {
-          background: #fff; border-bottom: 1px solid #e8eaed;
-          padding: 0 32px; height: 60px;
-          display: flex; align-items: center; justify-content: space-between;
-          position: sticky; top: 0; z-index: 5;
-        }
-        .ap-topbar-title { font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; color: #111418; letter-spacing: 0.02em; }
-        .ap-topbar-breadcrumb { font-size: 12px; color: #8a95a3; margin-top: 1px; }
-        .ap-content { padding: 28px 32px; flex: 1; background: #f4f5f7; min-height: calc(100vh - 60px); }
-
-        .ap-stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
-        .ap-stat-card { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; padding: 18px 20px; }
-        .ap-stat-label { font-size: 10px; font-weight: 700; color: #8a95a3; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
-        .ap-stat-value { font-family: 'Barlow Condensed', sans-serif; font-size: 32px; font-weight: 700; color: #111418; line-height: 1; }
-        .ap-stat-sub { font-size: 11px; color: #8a95a3; margin-top: 4px; }
-
-        .ap-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
-        .ap-search-wrap { position: relative; flex: 1; min-width: 200px; max-width: 320px; }
-        .ap-search-wrap svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #8a95a3; pointer-events: none; }
-        .ap-search-input { width: 100%; padding: 9px 12px 9px 34px; border: 1px solid #e2e4e8; border-radius: 8px; font-size: 13px; color: #111418; background: #fff; outline: none; font-family: 'Barlow', sans-serif; transition: border-color 0.15s; }
-        .ap-search-input:focus { border-color: #00C8E0; }
-        .ap-search-input::placeholder { color: #b0b7c3; }
-        .ap-filter-select { padding: 9px 12px; border: 1px solid #e2e4e8; border-radius: 8px; font-size: 13px; color: #374151; background: #fff; outline: none; font-family: 'Barlow', sans-serif; cursor: pointer; }
-        .ap-filter-select:focus { border-color: #00C8E0; }
-        .ap-new-btn { margin-left: auto; display: flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 8px; border: none; background: #00C8E0; color: #fff; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: background 0.15s; white-space: nowrap; }
-        .ap-new-btn:hover { background: #00afc6; }
-
-        .ap-table-wrap { background: #fff; border: 1px solid #e8eaed; border-radius: 10px; overflow: hidden; }
-        .ap-table-head { display: grid; grid-template-columns: 2fr 1fr 1fr 110px 80px 90px; padding: 11px 20px; background: #f8f9fb; border-bottom: 1px solid #e8eaed; }
-        .ap-th { font-size: 10px; font-weight: 700; color: #8a95a3; text-transform: uppercase; letter-spacing: 0.1em; }
-        .ap-table-row { display: grid; grid-template-columns: 2fr 1fr 1fr 110px 80px 90px; padding: 14px 20px; border-bottom: 1px solid #f0f2f5; align-items: center; transition: background 0.1s; }
-        .ap-table-row:last-child { border-bottom: none; }
-        .ap-table-row:hover { background: #fafbfc; }
-        .ap-article-title { font-size: 13px; font-weight: 600; color: #111418; line-height: 1.4; margin-bottom: 2px; }
-        .ap-article-date { font-size: 11px; color: #8a95a3; }
-        .ap-td { font-size: 12px; color: #374151; }
-        .ap-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-        .ap-badge-published { background: #ecfdf5; color: #059669; }
-        .ap-badge-draft { background: #f8f9fb; color: #8a95a3; border: 1px solid #e2e4e8; }
-        .ap-views { font-size: 12px; color: #6b7280; font-variant-numeric: tabular-nums; }
-        .ap-actions { display: flex; align-items: center; gap: 4px; }
-        .ap-action-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e2e4e8; background: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #6b7280; transition: all 0.12s; }
-        .ap-action-btn:hover { border-color: #00C8E0; color: #00C8E0; background: rgba(0,200,224,0.05); }
-        .ap-action-btn.del:hover { border-color: #dc2626; color: #dc2626; background: #fff1f1; }
-
-        .ap-empty { padding: 56px 20px; text-align: center; }
-        .ap-empty-title { font-size: 15px; font-weight: 600; color: #374151; margin-bottom: 6px; }
-        .ap-empty-sub { font-size: 13px; color: #8a95a3; }
-        .ap-error { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; font-size: 12px; padding: 8px 12px; border-radius: 7px; margin-bottom: 16px; }
-        .ap-skeleton-row { height: 52px; border-bottom: 1px solid #f0f2f5; background: linear-gradient(90deg, #fff 0%, #f8f9fb 50%, #fff 100%); background-size: 200% 100%; animation: ap-shimmer 1.4s ease-in-out infinite; }
-        @keyframes ap-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-
-        .ap-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #111418; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; z-index: 200; pointer-events: none; white-space: nowrap; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
-      `}</style>
-
-      {/* Topbar */}
-      <div className="ap-topbar">
-        <div>
-          <div className="ap-topbar-title">Articles</div>
-          <div className="ap-topbar-breadcrumb">CMS Admin · Content</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#00C8E0" }} />
-          <span style={{ fontSize: 11, color: "#8a95a3" }}>Sphere Tech Group Ltd</span>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="ap-content">
-
-        {/* Stat cards */}
-        <div className="ap-stats-row">
-          <div className="ap-stat-card">
-            <div className="ap-stat-label">Total articles</div>
-            <div className="ap-stat-value">{loading ? "—" : totalCount}</div>
-            <div className="ap-stat-sub">{totalPublished} published · {totalDraft} drafts (loaded)</div>
-          </div>
-          <div className="ap-stat-card">
-            <div className="ap-stat-label">Total views</div>
-            <div className="ap-stat-value">{loading ? "—" : totalViews.toLocaleString()}</div>
-            <div className="ap-stat-sub">Across loaded articles</div>
-          </div>
-          <div className="ap-stat-card">
-            <div className="ap-stat-label">Showing</div>
-            <div className="ap-stat-value">{loading ? "—" : articles.length}</div>
-            <div className="ap-stat-sub">of {totalCount} total</div>
-          </div>
-        </div>
-
-        {error && <div className="ap-error">{error}</div>}
-
-        {/* Toolbar */}
-        <div className="ap-toolbar">
-          <div className="ap-search-wrap">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.5" /><path d="M11 11l3 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-            <input className="ap-search-input" placeholder="Search articles…" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <select className="ap-filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
-            <option value="all">All statuses</option>
-            <option value="PUBLISHED">Published</option>
-            <option value="DRAFT">Draft</option>
-          </select>
-          <button className="ap-new-btn" onClick={() => navigate("/dashboard/articles/new")}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+      <Topbar
+        title="Articles"
+        subtitle={loading ? "Loading your content" : `${totalCount} ${totalCount === 1 ? "article" : "articles"}`}
+        actions={
+          <button
+            onClick={() => navigate("/dashboard/articles/new")}
+            className={`flex items-center gap-1.5 bg-navy-900 hover:bg-navy-800 text-white font-condensed text-sm font-semibold tracking-wide px-4 py-2 rounded-lg transition-colors ${focusRing}`}
+          >
+            <Plus className="w-4 h-4" strokeWidth={2} />
             New article
           </button>
+        }
+      />
+
+      <div className="p-6 flex flex-col gap-4 max-w-[1240px]">
+        {error && (
+          <div role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between gap-4">
+            <span>{error}</span>
+            <button onClick={loadArticles} className="font-medium underline underline-offset-2 whitespace-nowrap">
+              Try again
+            </button>
+          </div>
+        )}
+
+        {/* Status tabs + search */}
+        <div className="flex flex-wrap items-center gap-3 justify-between">
+          <div role="tablist" aria-label="Filter by status" className="flex gap-1 bg-gray-100 p-1 rounded-lg overflow-x-auto">
+            {TABS.map((t) => {
+              const active = statusFilter === t.key;
+              const count = stats ? stats[t.stat] : null;
+              return (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setStatus(t.key)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md whitespace-nowrap transition-colors ${focusRing} ${
+                    active ? "bg-white text-gray-900 font-medium shadow-sm" : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  {t.label}
+                  {count !== null && <span className={`text-xs tabular-nums ${active ? "text-gray-500" : "text-gray-400"}`}>{count}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="relative w-full sm:w-[300px]">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by title"
+              aria-label="Search articles"
+              className={`w-full pl-9 pr-8 py-2 text-sm bg-white border border-gray-200 rounded-lg placeholder:text-gray-400 ${focusRing}`}
+            />
+            {search && (
+              <button onClick={() => setSearch("")} aria-label="Clear search" className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 rounded ${focusRing}`}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Table */}
-        <div className="ap-table-wrap">
-          <div className="ap-table-head">
-            <div className="ap-th">Article</div>
-            <div className="ap-th">Category</div>
-            <div className="ap-th">Author</div>
-            <div className="ap-th">Status</div>
-            <div className="ap-th">Views</div>
-            <div className="ap-th">Actions</div>
-          </div>
-
-          {loading ? (
-            Array.from({ length: 5 }).map((_, i) => <div key={i} className="ap-skeleton-row" />)
-          ) : articles.length === 0 ? (
-            <div className="ap-empty">
-              <div className="ap-empty-title">No articles found</div>
-              <div className="ap-empty-sub">Try adjusting your search or filters, or create a new one</div>
-            </div>
-          ) : (
-            articles.map(article => (
-              <div className="ap-table-row" key={article.id}>
-                <div>
-                  <div className="ap-article-title">{article.title}</div>
-                  <div className="ap-article-date">
-                    {new Date(article.publishedAt || article.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                  </div>
-                </div>
-                <div className="ap-td">
-                  {article.categoryId ? (
-                    <span style={{ padding: "3px 9px", borderRadius: 20, fontSize: 11, fontWeight: 600, background: "#f0fafb", color: "#0891b2", border: "1px solid #b2e8f0" }}>
-                      {article.categoryId}
-                    </span>
-                  ) : (
-                    <span style={{ color: "#b0b7c3" }}>—</span>
-                  )}
-                </div>
-                <div className="ap-td">
-                  {article.author ? `${article.author.firstName} ${article.author.lastName}` : "—"}
-                </div>
-                <div>
-                  <button onClick={() => toggleStatus(article)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }} title="Click to toggle status">
-                    <span className={`ap-badge ap-badge-${article.status === "PUBLISHED" ? "published" : "draft"}`}>
-                      <span style={{ width: 5, height: 5, borderRadius: "50%", background: article.status === "PUBLISHED" ? "#059669" : "#9ca3af", flexShrink: 0 }} />
-                      {article.status === "PUBLISHED" ? "Published" : article.status}
-                    </span>
-                  </button>
-                </div>
-                <div className="ap-views">{article.status === "PUBLISHED" ? article.viewCount.toLocaleString() : "—"}</div>
-                <div className="ap-actions">
-                  <button className="ap-action-btn" title="Edit" onClick={() => navigate(`/dashboard/articles/${article.id}`)}>
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M11 2l3 3-9 9H2v-3L11 2z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
-                  </button>
-                  <button className="ap-action-btn del" title="Delete" onClick={() => setDeleteTarget(article)}>
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-                  </button>
-                </div>
-              </div>
-            ))
-          )}
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/70 text-xs text-gray-500">
+                <th className="font-medium px-5 py-3">Article</th>
+                <th className="font-medium px-3 py-3 hidden md:table-cell">Category</th>
+                <th className="font-medium px-3 py-3 hidden lg:table-cell">Author</th>
+                <th className="font-medium px-3 py-3">Status</th>
+                <th className="font-medium px-3 py-3 text-right hidden sm:table-cell">Views</th>
+                <th className="font-medium px-5 py-3 text-right">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={i} className="border-b border-gray-50">
+                    <td colSpan={6} className="h-[62px] animate-pulse bg-gray-50/60" />
+                  </tr>
+                ))
+              ) : articles.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-14 text-center">
+                    <p className="text-sm font-medium text-gray-800 mb-1">
+                      {filtering ? "No articles match these filters" : "No articles yet"}
+                    </p>
+                    <p className="text-sm text-gray-500 mb-4">
+                      {filtering ? "Try a different status or search term." : "Write your first article to see it here."}
+                    </p>
+                    {filtering ? (
+                      <button
+                        onClick={() => {
+                          setSearch("");
+                          setStatus("all");
+                        }}
+                        className={`text-sm font-medium text-[#007f8f] hover:underline rounded ${focusRing}`}
+                      >
+                        Clear filters
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => navigate("/dashboard/articles/new")}
+                        className={`bg-navy-900 text-white font-condensed text-sm font-semibold px-4 py-2 rounded-lg hover:bg-navy-800 ${focusRing}`}
+                      >
+                        Write an article
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ) : (
+                articles.map((a) => {
+                  const date = new Date(a.publishedAt || a.createdAt).toLocaleDateString("en-GB", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  });
+                  const isLive = a.status === "PUBLISHED";
+                  return (
+                    <tr key={a.id} className="border-b border-gray-50 last:border-b-0 hover:bg-gray-50/70 transition-colors group">
+                      <td className="px-5 py-3.5 max-w-[360px]">
+                        <button
+                          onClick={() => navigate(`/dashboard/articles/${a.id}`)}
+                          className={`block text-left w-full rounded ${focusRing}`}
+                        >
+                          <span className="block text-[14px] font-medium text-gray-900 truncate group-hover:text-[#007f8f] transition-colors">
+                            {a.title}
+                          </span>
+                          <span className="block text-xs text-gray-500 mt-0.5">{date}</span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-3.5 hidden md:table-cell">
+                        {a.category?.name ? (
+                          <span className="text-xs px-2.5 py-1 rounded-full bg-cyan-50 text-cyan-800 font-medium">{a.category.name}</span>
+                        ) : (
+                          <span className="text-xs text-gray-400">No category</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3.5 text-sm text-gray-700 hidden lg:table-cell">
+                        {a.author ? `${a.author.firstName} ${a.author.lastName}` : <span className="text-gray-400">Unassigned</span>}
+                      </td>
+                      <td className="px-3 py-3.5">
+                        <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${statusChip[a.status]}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${statusDot[a.status]}`} aria-hidden />
+                          {statusLabel[a.status]}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3.5 text-sm text-gray-600 text-right tabular-nums hidden sm:table-cell">
+                        {isLive ? a.viewCount.toLocaleString() : <span className="text-gray-300">-</span>}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => navigate(`/dashboard/articles/${a.id}`)}
+                            aria-label={`Edit ${a.title}`}
+                            title="Edit"
+                            className={`p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 ${focusRing}`}
+                          >
+                            <Pencil className="w-4 h-4" strokeWidth={1.75} />
+                          </button>
+                          <button
+                            onClick={() => togglePublish(a)}
+                            aria-label={`${isLive ? "Unpublish" : "Publish"} ${a.title}`}
+                            title={isLive ? "Unpublish" : "Publish"}
+                            className={`p-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 ${focusRing}`}
+                          >
+                            {isLive ? <EyeOff className="w-4 h-4" strokeWidth={1.75} /> : <Eye className="w-4 h-4" strokeWidth={1.75} />}
+                          </button>
+                          <button
+                            onClick={() => setDeleteTarget(a)}
+                            aria-label={`Delete ${a.title}`}
+                            title="Delete"
+                            className={`p-2 rounded-md text-gray-500 hover:text-red-600 hover:bg-red-50 ${focusRing}`}
+                          >
+                            <Trash2 className="w-4 h-4" strokeWidth={1.75} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
 
         {!loading && articles.length > 0 && (
-          <div style={{ marginTop: 12, fontSize: 12, color: "#8a95a3" }}>
-            Showing {articles.length} of {totalCount} articles
-          </div>
+          <p className="text-xs text-gray-500">
+            Showing {articles.length} of {totalCount}
+          </p>
         )}
       </div>
 
-      {/* Delete modal */}
-      {deleteTarget && (
-        <DeleteModal title={deleteTarget.title} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />
-      )}
+      {deleteTarget && <DeleteDialog title={deleteTarget.title} onConfirm={confirmDelete} onCancel={() => setDeleteTarget(null)} />}
 
-      {/* Toast */}
-      {toast && <div className="ap-toast">{toast}</div>}
+      <div aria-live="polite" role="status">
+        {toast && (
+          <div className="fixed bottom-7 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-5 py-2.5 rounded-lg shadow-lg z-[200] max-w-[90vw] truncate">
+            {toast}
+          </div>
+        )}
+      </div>
     </>
   );
 }
