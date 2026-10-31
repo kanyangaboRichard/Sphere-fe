@@ -3,12 +3,11 @@ import LoginPage from "../pages/auth/LoginPage";
 import DashboardLayout from "../components/layouts/Dashboardlayout";
 import DashboardPage from "../pages/dashboard/DashboardPage";
 import ArticlesPage from "../pages/articles/ArticlesPage";
-import NewArticlesPage from "../pages/articles/NewArticlesPage";
-import GalleryPage from "../pages/gallery/GalleryPage"; 
+import NewArticlePage from "../pages/articles/NewArticlesPage";
+import EditArticlePage from "../pages/articles/EditArticlePage";
+import GalleryPage from "../pages/gallery/GalleryPage";
 import ShopCategoriesPage from "../pages/shop-categories/ShopCategoriesPage";
 import ShopProductsPage from "../pages/shop-categories/ShopProductsPage";
-
-
 
 const isAuthenticated = () => !!localStorage.getItem("sphere_token");
 
@@ -51,15 +50,15 @@ export default function AppRoutes() {
 
         {/* Content */}
         <Route path="articles" element={<ArticlesPage />} />
-        <Route path="articles/new" element={<NewArticlesPage />} />
-        <Route path="articles/:id" element={<ComingSoon title="Edit Article" />} />
+        <Route path="articles/new" element={<NewArticlePage />} />
+        <Route path="articles/:id" element={<EditArticlePage />} />
         <Route path="gallery" element={<GalleryPage />} />
         <Route path="authors" element={<ComingSoon title="Authors" />} />
         <Route path="media" element={<ComingSoon title="Media Library" />} />
-        <Route path="/dashboard/shop-categories" element={<ShopCategoriesPage />} />
-        <Route path="/dashboard/shop-products" element={<ShopProductsPage />} />
-        
-        
+
+        {/* Shop */}
+        <Route path="shop-categories" element={<ShopCategoriesPage />} />
+        <Route path="shop-products" element={<ShopProductsPage />} />
 
         {/* Website */}
         <Route path="theme" element={<ComingSoon title="Theme & Appearance" />} />
@@ -67,6 +66,7 @@ export default function AppRoutes() {
         <Route path="navigation" element={<ComingSoon title="Navigation Links" />} />
 
         {/* Settings */}
+        <Route path="users" element={<ComingSoon title="Users" />} />
         <Route path="roles" element={<ComingSoon title="Roles & Permissions" />} />
         <Route path="audit-logs" element={<ComingSoon title="Audit Logs" />} />
         <Route path="settings" element={<ComingSoon title="Settings" />} />
