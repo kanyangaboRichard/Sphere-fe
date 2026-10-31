@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Topbar from "../../components/layouts/Topbar";
+import { FileText, Plus, ImageIcon, ClipboardList, ShoppingBag, Tag, ArrowRight } from "lucide-react";
 import api from "../../lib/axios";
 import axios from "axios";
 
@@ -9,10 +9,12 @@ type Status = "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "SCHEDULED" | "ARCHIVED";
 interface RecentArticle {
   id: string;
   title: string;
+  excerpt?: string | null;
   status: Status;
   createdAt: string;
   publishedAt: string | null;
   category?: { id: string; name: string } | null;
+  coverMedia?: { url: string } | null;
 }
 
 interface Stats {
@@ -29,20 +31,12 @@ interface ShopSnapshot {
   categories: number;
 }
 
-const statusChip: Record<Status, string> = {
-  PUBLISHED: "bg-emerald-50 text-emerald-700",
-  DRAFT: "bg-gray-100 text-gray-600",
-  IN_REVIEW: "bg-amber-50 text-amber-700",
-  SCHEDULED: "bg-violet-50 text-violet-700",
-  ARCHIVED: "bg-gray-100 text-gray-400",
-};
-
 const statusDot: Record<Status, string> = {
-  PUBLISHED: "bg-emerald-500",
-  DRAFT: "bg-gray-300",
-  IN_REVIEW: "bg-amber-500",
-  SCHEDULED: "bg-violet-500",
-  ARCHIVED: "bg-gray-300",
+  DRAFT: "#9ca3af",
+  IN_REVIEW: "#f5b301",
+  SCHEDULED: "#8b5cf6",
+  PUBLISHED: "#10b981",
+  ARCHIVED: "#6b7280",
 };
 
 const statusLabel: Record<Status, string> = {
@@ -72,10 +66,16 @@ function timeAgo(iso: string): string {
 
 const listOf = (res: PromiseSettledResult<unknown>): unknown[] => {
   if (res.status !== "fulfilled") return [];
-  const value = res.value as { data?: { data?: unknown } & unknown };
-  const d = value?.data?.data ?? value?.data;
+  const value = res.value as { data?: { data?: unknown } | unknown };
+  const d = (value as { data?: { data?: unknown } })?.data?.data ?? (value as { data?: unknown })?.data;
   return Array.isArray(d) ? d : [];
 };
+
+// Shared dark-surface tokens (change the accent here to retheme the page)
+const ACCENT = "#00C8E0";
+const panel = "bg-[var(--c-surface,#ffffff)] border border-[var(--c-border,#e8eaed)] rounded-2xl";
+const focusRing =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00C8E0] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--c-bg,#f4f5f7)]";
 
 export default function DashboardPage() {
   const navigate = useNavigate();
@@ -110,11 +110,8 @@ export default function DashboardPage() {
       }
 
       // Shop numbers are secondary: a failure here shouldn't break the page.
-      const [prodRes, catRes] = await Promise.allSettled([
-        api.get("/shop-products"),
-        api.get("/shop-categories"),
-      ]);
-      const products = listOf(prodRes) as { isDeal?: boolean }[];
+      const [prodRes, catRes] = await Promise.allSettled([api.get("/shop-products"), api.get("/shop-categories")]);
+      const products = listOf(prodRes) as Array<{ isDeal?: boolean }>;
       setShop({
         products: products.length,
         onOffer: products.filter((p) => p.isDeal).length,
@@ -126,7 +123,7 @@ export default function DashboardPage() {
 
   const stages = stats
     ? [
-        { key: "DRAFT", label: "Drafts", value: stats.draft, bar: "bg-gray-300", dot: "bg-gray-300" },
+        { key: "DRAFT", label: "Drafts", value: stats.draft, bar: "bg-gray-500", dot: "bg-gray-500" },
         { key: "IN_REVIEW", label: "In review", value: stats.inReview, bar: "bg-amber-400", dot: "bg-amber-400" },
         { key: "SCHEDULED", label: "Scheduled", value: stats.scheduled, bar: "bg-violet-500", dot: "bg-violet-500" },
         { key: "PUBLISHED", label: "Published", value: stats.published, bar: "bg-emerald-500", dot: "bg-emerald-500" },
@@ -134,7 +131,7 @@ export default function DashboardPage() {
     : [];
 
   const attention = stats
-    ? [
+    ? ([
         stats.inReview > 0 && {
           text: `${stats.inReview} ${stats.inReview === 1 ? "story is" : "stories are"} waiting for review`,
           path: "/dashboard/articles?status=IN_REVIEW",
@@ -143,30 +140,34 @@ export default function DashboardPage() {
           text: `${stats.draft} ${stats.draft === 1 ? "draft is" : "drafts are"} unfinished`,
           path: "/dashboard/articles?status=DRAFT",
         },
-      ].filter(Boolean) as { text: string; path: string }[]
+      ].filter(Boolean) as { text: string; path: string }[])
     : [];
 
-  const focusRing =
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00C8E0] focus-visible:ring-offset-2";
+  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <>
-      <Topbar
-        title={`${greeting()}, ${user.firstName || "there"}`}
-        subtitle="Your newsroom at a glance"
-        actions={
-          <button
-            onClick={() => navigate("/dashboard/articles/new")}
-            className={`bg-navy-900 hover:bg-navy-800 text-white font-condensed text-sm font-semibold tracking-wide px-4 py-2 rounded-lg transition-colors ${focusRing}`}
-          >
-            New article
-          </button>
-        }
-      />
+    <div className="flex-1 min-h-screen bg-[var(--c-bg,#f4f5f7)] text-[var(--c-text,#111418)]">
+      {/* Header */}
+      <header className="flex items-center justify-between gap-4 px-6 lg:px-8 h-[72px] border-b border-[var(--c-border,#e8eaed)] sticky top-0 z-10 bg-[var(--c-bg,#f4f5f7)]">
+        <div className="min-w-0">
+          <h1 className="font-condensed text-[22px] font-bold leading-tight truncate">
+            {greeting()}, {user.firstName || "there"}
+          </h1>
+          <p className="text-[13px] text-[var(--c-muted,#6b7280)]">{today}</p>
+        </div>
+        <button
+          onClick={() => navigate("/dashboard/articles/new")}
+          className={`flex items-center gap-1.5 text-[#0b1118] font-condensed text-sm font-bold px-4 py-2 rounded-lg hover:brightness-110 transition ${focusRing}`}
+          style={{ background: ACCENT }}
+        >
+          <Plus className="w-4 h-4" strokeWidth={2.5} />
+          New article
+        </button>
+      </header>
 
-      <div className="p-6 flex flex-col gap-5 max-w-[1240px]">
+      <div className="px-6 lg:px-8 py-6 flex flex-col gap-6 max-w-[1280px]">
         {error && (
-          <div role="alert" className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg flex items-center justify-between gap-4">
+          <div role="alert" className="bg-[var(--c-danger-bg,#fff1f1)] border border-[var(--c-danger-border,#fecaca)] text-[var(--c-danger,#dc2626)] text-sm px-4 py-3 rounded-xl flex items-center justify-between gap-4">
             <span>{error}</span>
             <button onClick={() => window.location.reload()} className="font-medium underline underline-offset-2 whitespace-nowrap">
               Try again
@@ -174,133 +175,157 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Pipeline: the one featured element */}
-        <section className="bg-navy-900 rounded-2xl p-6 text-white">
-          {loading || !stats ? (
-            <div className="animate-pulse">
-              <div className="h-10 w-72 bg-white/10 rounded mb-6" />
-              <div className="h-3 w-full bg-white/10 rounded-full mb-5" />
-              <div className="flex gap-8">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-10 w-20 bg-white/10 rounded" />
-                ))}
+        {/* Pipeline */}
+        <section className={`bg-[var(--c-surface,#ffffff)] text-[var(--c-text,#111418)] border border-[var(--c-border,#e8eaed)] shadow-sm rounded-2xl relative overflow-hidden p-6`}>
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-24 -right-16 w-[380px] h-[380px] rounded-full opacity-[0.10] blur-3xl"
+            style={{ background: ACCENT }}
+          />
+          <div className="relative">
+            {loading || !stats ? (
+              <div className="animate-pulse">
+                <div className="h-10 w-72 bg-[var(--c-hover-strong,#e8eaed)] rounded mb-6" />
+                <div className="h-3 w-full bg-[var(--c-hover-strong,#e8eaed)] rounded-full mb-5" />
+                <div className="flex gap-8">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-10 w-20 bg-[var(--c-hover-strong,#e8eaed)] rounded" />
+                  ))}
+                </div>
               </div>
-            </div>
-          ) : stats.total === 0 ? (
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div>
-                <h2 className="font-condensed text-3xl font-bold leading-tight">No stories yet</h2>
-                <p className="text-sm text-white/60 mt-1">Write your first article and it will show up here as it moves toward publishing.</p>
+            ) : stats.total === 0 ? (
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="font-condensed text-3xl font-bold leading-tight">No stories yet</h2>
+                  <p className="text-sm text-[var(--c-muted,#6b7280)] mt-1">Write your first article and it will show up here as it moves toward publishing.</p>
+                </div>
+                <button
+                  onClick={() => navigate("/dashboard/articles/new")}
+                  className={`text-[#0b1118] font-condensed font-bold text-sm px-5 py-2.5 rounded-lg hover:brightness-110 transition ${focusRing}`}
+                  style={{ background: ACCENT }}
+                >
+                  Write an article
+                </button>
               </div>
-              <button
-                onClick={() => navigate("/dashboard/articles/new")}
-                className={`bg-[#00C8E0] text-navy-900 font-condensed font-bold text-sm px-5 py-2.5 rounded-lg hover:brightness-110 transition ${focusRing}`}
-              >
-                Write an article
-              </button>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-end justify-between gap-4 flex-wrap mb-5">
-                <h2 className="font-condensed text-[40px] font-bold leading-none">
-                  {stats.published} live on the site
-                </h2>
-                <p className="text-sm text-white/60">
-                  {stats.total} {stats.total === 1 ? "story" : "stories"} in total
-                </p>
-              </div>
+            ) : (
+              <>
+                <div className="flex items-end justify-between gap-4 flex-wrap mb-5">
+                  <h2 className="font-condensed text-[44px] font-bold leading-none">{stats.published} live on the site</h2>
+                  <p className="text-sm text-[var(--c-muted,#6b7280)]">
+                    {stats.total} {stats.total === 1 ? "story" : "stories"} in total
+                  </p>
+                </div>
 
-              <div
-                className="flex h-3 w-full rounded-full overflow-hidden bg-white/10 gap-[2px]"
-                role="img"
-                aria-label={stages.map((s) => `${s.value} ${s.label.toLowerCase()}`).join(", ")}
-              >
-                {stages.filter((s) => s.value > 0).map((s) => (
-                  <div key={s.key} className={s.bar} style={{ flexGrow: s.value, flexBasis: 0 }} />
-                ))}
-              </div>
+                <div
+                  className="flex h-2.5 w-full rounded-full overflow-hidden bg-[var(--c-hover-strong,#e8eaed)] gap-[2px]"
+                  role="img"
+                  aria-label={stages.map((s) => `${s.value} ${s.label.toLowerCase()}`).join(", ")}
+                >
+                  {stages
+                    .filter((s) => s.value > 0)
+                    .map((s) => (
+                      <div key={s.key} className={s.bar} style={{ flexGrow: s.value, flexBasis: 0 }} />
+                    ))}
+                </div>
 
-              <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {stages.map((s) => (
-                  <button
-                    key={s.key}
-                    onClick={() => navigate(`/dashboard/articles?status=${s.key}`)}
-                    className={`text-left rounded-lg px-3 py-2 -mx-3 hover:bg-white/5 transition-colors ${focusRing} focus-visible:ring-offset-navy-900`}
-                  >
-                    <div className="flex items-center gap-2 text-sm text-white/70">
-                      <span className={`w-2 h-2 rounded-full ${s.dot}`} />
-                      {s.label}
-                    </div>
-                    <div className="font-condensed text-3xl font-bold leading-tight mt-0.5">{s.value}</div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+                <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {stages.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => navigate(`/dashboard/articles?status=${s.key}`)}
+                      className={`text-left rounded-xl px-4 py-3 bg-[var(--c-surface-2,#f8f9fb)] border border-[var(--c-border,#e8eaed)] hover:bg-[var(--c-hover,#f3f4f6)] transition-colors ${focusRing}`}
+                    >
+                      <div className="flex items-center gap-2 text-sm text-[var(--c-muted,#6b7280)]">
+                        <span className={`w-2 h-2 rounded-full ${s.dot}`} />
+                        {s.label}
+                      </div>
+                      <div className="font-condensed text-3xl font-bold leading-tight mt-1">{s.value}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </section>
 
         {/* Needs attention */}
         {attention.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 -mt-2">
             {attention.map((a) => (
               <button
                 key={a.text}
                 onClick={() => navigate(a.path)}
-                className={`flex items-center gap-2 text-sm bg-amber-50 text-amber-800 border border-amber-200 rounded-full px-4 py-1.5 hover:bg-amber-100 transition-colors ${focusRing}`}
+                className={`cms-attn ${focusRing}`}
               >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span className="cms-attn-dot" />
                 {a.text}
               </button>
             ))}
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-5 items-start">
-          {/* Recent articles */}
-          <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-              <h2 className="font-condensed text-lg font-bold text-gray-900">Recent articles</h2>
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 items-start">
+          {/* Latest stories */}
+          <section>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-condensed text-xl font-bold">Latest stories</h2>
               <button
                 onClick={() => navigate("/dashboard/articles")}
-                className={`text-sm text-[#007f8f] font-medium hover:underline rounded ${focusRing}`}
+                className={`flex items-center gap-1 text-sm font-medium rounded hover:underline text-[var(--c-accent-ink,#007f8f)] ${focusRing}`}
               >
                 See all articles
+                <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
             {loading ? (
-              Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="h-[60px] border-b border-gray-50 last:border-b-0 animate-pulse bg-gray-50/60" />
-              ))
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className={`${panel} h-[300px] animate-pulse`} />
+                ))}
+              </div>
             ) : recent.length === 0 ? (
-              <div className="px-5 py-12 text-center">
-                <p className="text-sm text-gray-500 mb-3">No articles yet.</p>
+              <div className={`${panel} px-6 py-14 text-center`}>
+                <p className="text-sm text-[var(--c-muted,#6b7280)] mb-4">No articles yet.</p>
                 <button
                   onClick={() => navigate("/dashboard/articles/new")}
-                  className={`bg-navy-900 text-white font-condensed text-sm font-semibold px-4 py-2 rounded-lg hover:bg-navy-800 ${focusRing}`}
+                  className={`text-[#0b1118] font-condensed text-sm font-bold px-4 py-2 rounded-lg hover:brightness-110 ${focusRing}`}
+                  style={{ background: ACCENT }}
                 >
                   Write your first article
                 </button>
               </div>
             ) : (
-              <ul>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 {recent.map((a) => (
-                  <li key={a.id} className="border-b border-gray-50 last:border-b-0">
+                  <li key={a.id}>
                     <button
                       onClick={() => navigate(`/dashboard/articles/${a.id}`)}
-                      className={`w-full flex items-center gap-4 px-5 py-3.5 text-left hover:bg-gray-50 transition-colors ${focusRing} focus-visible:ring-inset focus-visible:ring-offset-0`}
+                      className={`${panel} group w-full text-left overflow-hidden hover:border-[var(--c-border-strong,#e2e4e8)] transition-colors ${focusRing}`}
                     >
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${statusDot[a.status]}`} aria-hidden />
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-[14px] font-medium text-gray-900 truncate">{a.title}</span>
-                        <span className="block text-xs text-gray-500 mt-0.5">
-                          {a.category?.name ? `${a.category.name}, ` : ""}
-                          {timeAgo(a.publishedAt || a.createdAt)}
+                      <div className="relative aspect-[16/9] bg-gradient-to-br from-[#e6edf3] to-[#cfd9e3]">
+                        {a.coverMedia?.url ? (
+                          <img src={a.coverMedia.url} alt="" className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300 motion-reduce:transition-none" />
+                        ) : (
+                          <FileText className="absolute inset-0 m-auto w-8 h-8 text-slate-400/70" strokeWidth={1.5} />
+                        )}
+                        <span className="absolute top-3 left-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium backdrop-blur-sm shadow-sm" style={{ background: "rgba(255,255,255,0.92)", color: "#1f2937" }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusDot[a.status] }} />
+                          {statusLabel[a.status]}
                         </span>
-                      </span>
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium whitespace-nowrap ${statusChip[a.status]}`}>
-                        {statusLabel[a.status]}
-                      </span>
+                      </div>
+                      <div className="p-4">
+                        {a.category?.name && (
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-1.5 text-[var(--c-accent-ink,#007f8f)]">
+                            {a.category.name}
+                          </div>
+                        )}
+                        <h3 className="text-[15px] font-semibold leading-snug line-clamp-2">{a.title}</h3>
+                        {a.excerpt && (
+                          <p className="text-[13px] leading-relaxed text-[var(--c-muted,#6b7280)] mt-1.5 line-clamp-3">{a.excerpt}</p>
+                        )}
+                        <p className="text-xs text-[var(--c-faint,#9ca3af)] mt-3">{timeAgo(a.publishedAt || a.createdAt)}</p>
+                      </div>
                     </button>
                   </li>
                 ))}
@@ -309,11 +334,11 @@ export default function DashboardPage() {
           </section>
 
           {/* Right column */}
-          <div className="flex flex-col gap-5">
-            <section className="bg-white border border-gray-200 rounded-xl p-5">
-              <h2 className="font-condensed text-lg font-bold text-gray-900 mb-3">Shop</h2>
+          <div className="flex flex-col gap-6">
+            <section className={`${panel} p-5`}>
+              <h2 className="font-condensed text-lg font-bold mb-4">Shop</h2>
               {shop === null ? (
-                <div className="h-16 bg-gray-50 rounded animate-pulse" />
+                <div className="h-16 bg-[var(--c-hover,#f3f4f6)] rounded animate-pulse" />
               ) : (
                 <>
                   <dl className="grid grid-cols-3 gap-2 mb-4">
@@ -323,22 +348,24 @@ export default function DashboardPage() {
                       { label: "Categories", value: shop.categories },
                     ].map((m) => (
                       <div key={m.label}>
-                        <dd className="font-condensed text-2xl font-bold text-gray-900 leading-none">{m.value}</dd>
-                        <dt className="text-xs text-gray-500 mt-1">{m.label}</dt>
+                        <dd className="font-condensed text-2xl font-bold leading-none">{m.value}</dd>
+                        <dt className="text-xs text-[var(--c-muted,#6b7280)] mt-1">{m.label}</dt>
                       </div>
                     ))}
                   </dl>
                   <div className="flex gap-2">
                     <button
                       onClick={() => navigate("/dashboard/shop-products")}
-                      className={`flex-1 text-sm font-medium bg-gray-900 text-white rounded-lg py-2 hover:bg-gray-800 transition-colors ${focusRing}`}
+                      className={`flex-1 flex items-center justify-center gap-1.5 text-sm font-medium bg-[var(--c-hover,#f3f4f6)] hover:bg-[var(--c-hover-strong,#e8eaed)] rounded-lg py-2 transition-colors ${focusRing}`}
                     >
-                      Add product
+                      <ShoppingBag className="w-4 h-4" strokeWidth={1.75} />
+                      Products
                     </button>
                     <button
                       onClick={() => navigate("/dashboard/shop-categories")}
-                      className={`flex-1 text-sm font-medium border border-gray-200 text-gray-700 rounded-lg py-2 hover:bg-gray-50 transition-colors ${focusRing}`}
+                      className={`flex-1 flex items-center justify-center gap-1.5 text-sm font-medium border border-[var(--c-border-strong,#e2e4e8)] hover:bg-[var(--c-hover,#f3f4f6)] rounded-lg py-2 transition-colors ${focusRing}`}
                     >
+                      <Tag className="w-4 h-4" strokeWidth={1.75} />
                       Categories
                     </button>
                   </div>
@@ -346,19 +373,20 @@ export default function DashboardPage() {
               )}
             </section>
 
-            <section className="bg-white border border-gray-200 rounded-xl p-5">
-              <h2 className="font-condensed text-lg font-bold text-gray-900 mb-3">Shortcuts</h2>
-              <div className="flex flex-col gap-1.5">
+            <section className={`${panel} p-5`}>
+              <h2 className="font-condensed text-lg font-bold mb-3">Shortcuts</h2>
+              <div className="flex flex-col gap-1">
                 {[
-                  { label: "Write new article", path: "/dashboard/articles/new" },
-                  { label: "Open gallery", path: "/dashboard/gallery" },
-                  { label: "View audit logs", path: "/dashboard/audit-logs" },
+                  { label: "Write new article", path: "/dashboard/articles/new", icon: Plus },
+                  { label: "Open gallery", path: "/dashboard/gallery", icon: ImageIcon },
+                  { label: "View audit logs", path: "/dashboard/audit-logs", icon: ClipboardList },
                 ].map((q) => (
                   <button
                     key={q.label}
                     onClick={() => navigate(q.path)}
-                    className={`text-sm text-left text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors ${focusRing}`}
+                    className={`flex items-center gap-3 text-sm text-left text-[var(--c-text-2,#374151)] px-3 py-2.5 rounded-lg hover:bg-[var(--c-hover,#f3f4f6)] transition-colors ${focusRing}`}
                   >
+                    <q.icon className="w-4 h-4 text-[var(--c-muted,#6b7280)]" strokeWidth={1.75} />
                     {q.label}
                   </button>
                 ))}
@@ -367,6 +395,6 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
